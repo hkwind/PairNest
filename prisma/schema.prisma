@@ -1,0 +1,152 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum PartnerRole {
+  A
+  B
+}
+
+enum EventSource {
+  A
+  B
+  SHARED
+}
+
+enum CalendarEventKind {
+  APP
+  PROVIDER_CACHE
+  ANNIVERSARY
+}
+
+model Workspace {
+  id                  String             @id @default(cuid())
+  slug                String             @unique
+  name                String             @default("PairNest")
+  anniversary         DateTime?
+  colorUserA          String             @default("#01696f")
+  colorUserB          String             @default("#a13544")
+  colorShared         String             @default("#6f5ef9")
+  showAnniversary     Boolean            @default(true)
+  syncAnniversary     Boolean            @default(false)
+  anniversaryMode     String             @default("monthly")
+  monthlyCount        Int                @default(24)
+  hundredDaysCount    Int                @default(10)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  partners            Partner[]
+  wishlistItems       WishlistItem[]
+  goals               Goal[]
+  events              Event[]
+  calendarConnections CalendarConnection[]
+  calendarCache       CalendarCache[]
+}
+
+model Partner {
+  id          String      @id @default(cuid())
+  workspaceId String
+  role        PartnerRole
+  name        String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, role])
+  @@index([workspaceId])
+}
+
+model WishlistItem {
+  id          String    @id @default(cuid())
+  workspaceId String
+  title       String
+  category    String    @default("General")
+  link        String?
+  note        String?
+  addedBy     String    @default("Someone")
+  priority    String    @default("Medium")
+  status      String    @default("Saved")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+}
+
+model Goal {
+  id          String    @id @default(cuid())
+  workspaceId String
+  title       String
+  type        String    @default("General")
+  targetDate  DateTime?
+  status      String    @default("Planned")
+  owner       String    @default("Both")
+  progress    Int       @default(0)
+  note        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+}
+
+model Event {
+  id               String            @id @default(cuid())
+  workspaceId      String
+  title            String
+  start            DateTime
+  end              DateTime?
+  source           EventSource        @default(SHARED)
+  note             String?
+  aCalendarEventId String?
+  bCalendarEventId String?
+  aSyncStatus      String             @default("not_connected")
+  bSyncStatus      String             @default("not_connected")
+  deletedAt        DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  workspace        Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, start])
+  @@index([workspaceId, deletedAt])
+}
+
+model CalendarConnection {
+  id            String      @id @default(cuid())
+  workspaceId   String
+  role          PartnerRole
+  principalId   String?
+  provider      String      @default("google")
+  calendarId    String
+  calendarName  String
+  connectedAt   DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  active        Boolean     @default(true)
+  workspace     Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, role, active])
+}
+
+model CalendarCache {
+  id              String      @id @default(cuid())
+  workspaceId     String
+  role            PartnerRole
+  provider        String      @default("google")
+  externalEventId String
+  title           String
+  start           DateTime
+  end             DateTime?
+  allDay          Boolean     @default(false)
+  calendarId      String
+  fetchedAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  workspace       Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, role, provider, externalEventId])
+  @@index([workspaceId, start])
+}
