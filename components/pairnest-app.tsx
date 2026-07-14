@@ -32,14 +32,18 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
   const [modal, setModal] = useState<Modal>(null);
   const [calendarView, setCalendarView] = useState<CalendarView>("month");
   const [busy, setBusy] = useState("Loading workspace...");
+  const [loadError, setLoadError] = useState("");
   const [toast, setToast] = useState("");
 
   const loadAll = useCallback(async () => {
     setBusy("Loading workspace...");
     try {
+      setLoadError("");
       setData(await api.bootstrap(coupleId));
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "Load failed");
+      const message = error instanceof Error ? error.message : "Load failed";
+      setLoadError(message);
+      showToast(message);
     } finally {
       setBusy("");
     }
@@ -120,7 +124,18 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
         </header>
 
         <main className="content">
-          {!data ? (
+          {!data && loadError ? (
+            <section className="app-error-panel">
+              <div>
+                <span className="eyebrow">Connection issue</span>
+                <h2>PairNest could not load.</h2>
+                <p>{loadError}</p>
+              </div>
+              <button className="primary-btn" onClick={loadAll} type="button">
+                Try again
+              </button>
+            </section>
+          ) : !data ? (
             <div className="empty-state">Loading PairNest...</div>
           ) : (
             <>

@@ -10,7 +10,14 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || response.statusText);
+    let message = text || response.statusText;
+    try {
+      const data = JSON.parse(text) as { message?: string; detail?: string };
+      message = data.detail ? `${data.message} ${data.detail}` : data.message || response.statusText;
+    } catch {
+      message = text || response.statusText;
+    }
+    throw new Error(message);
   }
   return response.json() as Promise<T>;
 }
