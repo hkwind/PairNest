@@ -374,29 +374,63 @@ function HomeScreen({
   avgProgress: number;
   onGo: (screen: Screen) => void;
 }) {
+  const memoryMoments = getMemoryMoments(data.mergedEvents);
+
   return (
     <section className="screen screen-home">
-      <ScreenHeader title="Main page" description="Overview of status and upcoming events." />
-      <article className="hero-card">
-        <div className="meta-row">
-          <span className="pill primary">Shared status</span>
-          <span className="pill source-shared">{getAnniversaryText(data)}</span>
+      <section className="hero-band">
+        <div className="hero-copy">
+          <span className="eyebrow">Couple workspace</span>
+          <h2>Everything important, in one place.</h2>
+          <p>Wishlist plans, future goals, shared dates, and the little milestones that make the week feel like yours.</p>
+          <div className="meta-row">
+            <span className="pill primary">Shared workspace</span>
+            <span className="pill status-pill status-warm">{getAnniversaryText(data)}</span>
+          </div>
         </div>
-        <h2>Everything important, in one place.</h2>
-        <p>Wishlist, future goals, and merged calendars for both people.</p>
-      </article>
+        <article className="memory-card">
+          <div className="memory-card-top">
+            <span className="memory-badge">Milestone</span>
+            <span className="memory-date">{data.settings.anniversary || "Set your date"}</span>
+          </div>
+          <div className="memory-photo">
+            <div className="memory-photo-note">
+              <span className="memory-photo-label">Next chapter</span>
+              <strong>{upcoming[0]?.title || "A quiet week together"}</strong>
+            </div>
+          </div>
+          <div className="memory-meta">
+            <strong>{memoryMoments[0]?.title || "Shared memories live here"}</strong>
+            <p>{memoryMoments[0] ? formatSmartDate(memoryMoments[0].start) : "Add events and goals to build your history."}</p>
+          </div>
+        </article>
+      </section>
       <div className="stats-grid">
         <MiniStat label="Wishlist" value={data.wishlist.length} />
         <MiniStat label="Future goals" value={data.bucket.length} />
         <MiniStat label="Upcoming events" value={upcoming.length} />
         <MiniStat label="Avg goal progress" value={`${avgProgress}%`} />
       </div>
+      <section className="memory-strip">
+        <PanelTitle title="Date history" action="Open calendar" onAction={() => onGo("calendar")} />
+        <div className="memory-grid">
+          {memoryMoments.map((event) => (
+            <article className="memory-mini-card" key={event.id}>
+              <span className={`memory-dot source-${event.source}`} />
+              <div>
+                <strong>{event.title}</strong>
+                <p>{formatSmartDate(event.start)}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
       <div className="dashboard-grid">
-        <section className="panel">
+        <section className="panel panel-coral">
           <PanelTitle title="Upcoming events" action="Open calendar" onAction={() => onGo("calendar")} />
           <EventList events={upcoming.slice(0, 5)} compact />
         </section>
-        <section className="panel">
+        <section className="panel panel-cream">
           <PanelTitle title="Status overview" action="Open settings" onAction={() => onGo("settings")} />
           <div className="list">
             <StatusRow label={`${data.settings.partnerAName} calendar`} value={data.googleStatus.aConnected ? "Linked" : "Not linked"} />
@@ -792,14 +826,14 @@ function PanelTitle({ title, action, onAction }: { title: string; action: string
 
 function WishlistCard({ item, onDelete }: { item: WishlistItem; onDelete: (id: string) => void }) {
   return (
-    <article className="list-card">
+    <article className={`list-card ${wishlistAccentClass(item.category)}`}>
       <div className="item-top">
         <div>
           <h3>{item.title}</h3>
           <div className="meta-row">
-            <span className="pill">{item.category}</span>
-            <span className="pill">{item.priority}</span>
-            <span className="pill primary">{item.addedBy}</span>
+            <span className={`pill category-pill ${wishlistAccentClass(item.category)}`}>{item.category}</span>
+            <span className={`pill status-pill ${priorityClass(item.priority)}`}>{item.priority}</span>
+            <span className="pill person-pill">{item.addedBy}</span>
           </div>
         </div>
         <DeleteButton onClick={() => onDelete(item.id)} />
@@ -812,14 +846,14 @@ function WishlistCard({ item, onDelete }: { item: WishlistItem; onDelete: (id: s
 
 function GoalCard({ item, onDelete }: { item: GoalItem; onDelete: (id: string) => void }) {
   return (
-    <article className="list-card">
+    <article className={`list-card ${goalAccentClass(item.type)}`}>
       <div className="item-top">
         <div>
           <h3>{item.title}</h3>
           <div className="meta-row">
-            <span className="pill">{item.type}</span>
-            <span className="pill primary">{item.status}</span>
-            <span className="pill">{item.owner}</span>
+            <span className={`pill category-pill ${goalAccentClass(item.type)}`}>{item.type}</span>
+            <span className={`pill status-pill ${goalStatusClass(item.status)}`}>{item.status}</span>
+            <span className="pill person-pill">{item.owner}</span>
           </div>
         </div>
         <DeleteButton onClick={() => onDelete(item.id)} />
@@ -894,6 +928,7 @@ function EventRow({ event, onDelete }: { event: MergedEvent; onDelete?: (id: str
         <h4>{event.title}</h4>
         <p>{formatSmartDate(event.start)} {event.note ? `- ${event.note}` : ""}</p>
       </div>
+      <span className={`event-kind-badge kind-${event.kind}`}>{event.kind === "app" ? "Shared" : event.kind === "anniversary" ? "Milestone" : "Calendar"}</span>
       {onDelete && event.kind === "app" && <DeleteButton onClick={() => onDelete(event.id)} />}
     </article>
   );
@@ -945,6 +980,44 @@ function getUpcoming(events: MergedEvent[]) {
   return events
     .filter((event) => new Date(event.start).getTime() >= now.getTime() - 86400000)
     .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+}
+
+function getMemoryMoments(events: MergedEvent[]) {
+  return [...events]
+    .filter((event) => event.kind === "anniversary" || event.kind === "app")
+    .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
+    .slice(0, 4);
+}
+
+function wishlistAccentClass(category: string) {
+  const value = category.toLowerCase();
+  if (value.includes("travel")) return "accent-coral";
+  if (value.includes("restaurant") || value.includes("gift")) return "accent-peach";
+  if (value.includes("experience")) return "accent-mint";
+  return "accent-cream";
+}
+
+function goalAccentClass(type: string) {
+  const value = type.toLowerCase();
+  if (value.includes("travel")) return "accent-coral";
+  if (value.includes("finance") || value.includes("home")) return "accent-forest";
+  if (value.includes("learning")) return "accent-lilac";
+  return "accent-cream";
+}
+
+function priorityClass(priority: string) {
+  const value = priority.toLowerCase();
+  if (value === "high") return "status-coral";
+  if (value === "medium") return "status-gold";
+  return "status-mint";
+}
+
+function goalStatusClass(status: string) {
+  const value = status.toLowerCase();
+  if (value.includes("done")) return "status-mint";
+  if (value.includes("progress")) return "status-coral";
+  if (value.includes("pause")) return "status-soft";
+  return "status-lilac";
 }
 
 function getAnniversaryText(data: BootstrapPayload) {
