@@ -74,7 +74,12 @@ export async function bootstrapWorkspace(slug: string): Promise<BootstrapPayload
         orderBy: { start: "asc" }
       }),
       prisma.calendarConnection.findMany({
-        where: { workspaceId: workspace.id, active: true }
+        where: { workspaceId: workspace.id, active: true },
+        select: {
+          role: true,
+          calendarId: true,
+          calendarName: true
+        }
       }),
       prisma.calendarCache.findMany({
         where: { workspaceId: workspace.id },
