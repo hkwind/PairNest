@@ -26,7 +26,7 @@ The old `google.script.run` calls map to API routes:
 ## Local Setup
 
 1. Create a hosted Postgres database with Supabase, Neon, or Vercel Postgres.
-2. Copy `.env.example` to `.env` and set both `DATABASE_URL` and `DIRECT_URL`.
+2. Copy `.env.example` to `.env` and set both `DATABASE_URL` and `DATABASE_URL_UNPOOLED`.
 3. Install dependencies:
 
 ```bash
@@ -50,7 +50,7 @@ npm run dev
 
 1. Push this project to GitHub.
 2. Import the repository in Vercel.
-3. Add both `DATABASE_URL` and `DIRECT_URL` in Vercel Project Settings -> Environment Variables.
+3. Add both `DATABASE_URL` and `DATABASE_URL_UNPOOLED` in Vercel Project Settings -> Environment Variables.
 4. Use the default build command:
 
 ```bash
@@ -78,7 +78,7 @@ npm run prisma:deploy
 This repo uses two connection strings:
 
 - `DATABASE_URL` for the pooled runtime connection.
-- `DIRECT_URL` for direct Prisma migrations and schema work.
+- `DATABASE_URL_UNPOOLED` for direct Prisma migrations and schema work.
 
 That setup is a good fit for Neon and Vercel because app traffic uses the pooler while migrations keep a direct path.
 

@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
         ok: false,
         code: "BOOTSTRAP_FAILED",
         message:
-          "PairNest could not load the workspace. Check DATABASE_URL, DIRECT_URL, and whether Prisma migrations have run.",
+          "PairNest could not load the workspace. Check DATABASE_URL, DATABASE_URL_UNPOOLED, and whether Prisma migrations have run.",
         detail: process.env.NODE_ENV === "production" ? undefined : message
       },
       { status: 500 }
