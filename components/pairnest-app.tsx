@@ -151,7 +151,7 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
                 <h2>PairNest could not load.</h2>
                 <p>{loadError}</p>
               </div>
-              <button className="primary-btn" onClick={loadAll} type="button">
+              <button className="primary-btn" onClick={() => void loadAll()} type="button">
                 Try again
               </button>
             </section>
