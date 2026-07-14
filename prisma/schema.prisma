@@ -124,6 +124,11 @@ model CalendarConnection {
   provider      String      @default("google")
   calendarId    String
   calendarName  String
+  accessToken   String?
+  refreshToken  String?
+  tokenType     String?
+  scope         String?
+  expiresAt     DateTime?
   connectedAt   DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
   active        Boolean     @default(true)

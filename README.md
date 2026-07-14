@@ -51,13 +51,14 @@ npm run dev
 1. Push this project to GitHub.
 2. Import the repository in Vercel.
 3. Add both `DATABASE_URL` and `DATABASE_URL_UNPOOLED` in Vercel Project Settings -> Environment Variables.
-4. Use the default build command:
+4. For Google Calendar, add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI`.
+5. Use the default build command:
 
 ```bash
 npm run build
 ```
 
-5. Run migrations against production from your machine or CI:
+6. Run migrations against production from your machine or CI:
 
 ```bash
 npm run prisma:deploy
@@ -84,10 +85,46 @@ That setup is a good fit for Neon and Vercel because app traffic uses the pooler
 
 ## Calendar Integration Strategy
 
-The app no longer uses Apps Script or Google Sheets. Calendar connection metadata and cached events live in Postgres. The current implementation preserves the visible connection controls and app-event sync statuses, but does not impersonate the old Apps Script `CalendarApp` behavior. The production path is to add Google OAuth in Next.js, store provider tokens securely, and run provider sync through route handlers or scheduled Vercel Cron jobs that populate `CalendarCache` and update `Event` sync statuses.
+The app no longer uses Apps Script or Google Sheets. Google Calendar uses OAuth through Next.js route handlers:
+
+- `GET /api/google/start` sends a partner through Google consent.
+- `GET /api/google/callback` exchanges the code and stores the active calendar connection.
+- `PUT /api/calendar-links` refreshes upcoming Google events into `CalendarCache`.
+
+Create a Google OAuth web client and add this authorized redirect URI:
+
+```text
+https://YOUR_VERCEL_DOMAIN/api/google/callback
+```
+
+Then set these Vercel environment variables:
+
+```bash
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REDIRECT_URI=https://YOUR_VERCEL_DOMAIN/api/google/callback
+```
+
+The current scope is `https://www.googleapis.com/auth/calendar.events.readonly`, which imports Google events into PairNest. Writing PairNest-created events back to Google can be layered on later by expanding the scope and adding an event writeback step.
+
+## Codex Skills
+
+Codex skills should live as folders under:
+
+```text
+C:\Users\longs\.codex\skills
+```
+
+A reusable skill should usually be a folder with a `SKILL.md` file, for example:
+
+```text
+C:\Users\longs\.codex\skills\figma-design-analysis\SKILL.md
+```
+
+Your `DESIGN-figma.md` file can be used as a design reference, but Codex will not automatically treat a loose Markdown file as an installed skill. Put future reusable instructions in a folder with `SKILL.md`; put project-specific design docs inside the repo when they should travel with the code.
 
 ## Tradeoffs
 
-- Calendar provider sync is represented as metadata/cache architecture, not a fake Google sync.
+- Google Calendar import is implemented through OAuth and cache refresh, but PairNest-created event writeback is not enabled yet.
 - Authentication is intentionally minimal because the original app used a shared `coupleId`; adding auth can be layered around `Workspace` membership later.
-- The UI keeps the original calm PairNest palette and sections while improving desktop/tablet layouts with a side rail and wider grids.
+- The UI now follows the provided Figma-style design reference: black-and-white app chrome, pastel content blocks, pill controls, circular icon actions, and light hairline borders.

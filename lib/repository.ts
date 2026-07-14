@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { clampNumber, DEFAULT_COLORS, parseAnniversaryConfig, parseColors } from "@/lib/defaults";
 import { parseDateInput, parseDateOnly, toIso } from "@/lib/dates";
 import { generateAnniversaryEvents } from "@/lib/anniversary";
+import { fetchGoogleEvents } from "@/lib/google-calendar";
 import type {
   BootstrapPayload,
   CustomEventItem,
@@ -263,20 +264,118 @@ export async function connectCalendar(slug: string, role: Role, calendarId: stri
   };
 }
 
+export async function connectGoogleCalendar(
+  slug: string,
+  role: Role,
+  payload: {
+    calendarId: string;
+    calendarName: string;
+    accessToken: string;
+    refreshToken: string;
+    tokenType: string;
+    scope: string;
+    expiresAt: Date;
+  }
+) {
+  const workspace = await ensureWorkspace(slug);
+  const prismaRole = toPrismaRole(role);
+  await prisma.calendarConnection.updateMany({
+    where: { workspaceId: workspace.id, role: prismaRole, active: true, provider: "google" },
+    data: { active: false }
+  });
+
+  const connection = await prisma.calendarConnection.create({
+    data: {
+      workspaceId: workspace.id,
+      role: prismaRole,
+      principalId: `google-${role}`,
+      provider: "google",
+      calendarId: payload.calendarId || "primary",
+      calendarName: payload.calendarName || "Primary calendar",
+      accessToken: payload.accessToken,
+      refreshToken: payload.refreshToken || null,
+      tokenType: payload.tokenType,
+      scope: payload.scope,
+      expiresAt: payload.expiresAt,
+      active: true
+    }
+  });
+
+  await refreshCalendar(slug);
+  return connection;
+}
+
 export async function disconnectCalendar(slug: string, role: Role) {
   const workspace = await ensureWorkspace(slug);
   const result = await prisma.calendarConnection.updateMany({
-    where: { workspaceId: workspace.id, role: toPrismaRole(role), active: true },
+    where: { workspaceId: workspace.id, role: toPrismaRole(role), active: true, provider: "google" },
     data: { active: false }
   });
   return { ok: result.count > 0 };
 }
 
 export async function refreshCalendar(slug: string) {
-  await ensureWorkspace(slug);
+  const workspace = await ensureWorkspace(slug);
+  const connections = await prisma.calendarConnection.findMany({
+    where: { workspaceId: workspace.id, active: true, provider: "google" }
+  });
+
+  if (!connections.length) {
+    return { ok: true, message: "Connect Google Calendar first, then refresh." };
+  }
+
+  let importedCount = 0;
+  for (const connection of connections) {
+    const events = await fetchGoogleEvents(connection);
+    importedCount += events.length;
+    const seenIds = events.map((event) => event.externalEventId);
+
+    await prisma.$transaction([
+      prisma.calendarCache.deleteMany({
+        where: {
+          workspaceId: workspace.id,
+          role: connection.role,
+          provider: "google",
+          externalEventId: { notIn: seenIds.length ? seenIds : [""] }
+        }
+      }),
+      ...events.map((event) =>
+        prisma.calendarCache.upsert({
+          where: {
+            workspaceId_role_provider_externalEventId: {
+              workspaceId: workspace.id,
+              role: connection.role,
+              provider: "google",
+              externalEventId: event.externalEventId
+            }
+          },
+          update: {
+            title: event.title,
+            start: event.start,
+            end: event.end,
+            allDay: event.allDay,
+            calendarId: connection.calendarId,
+            fetchedAt: new Date()
+          },
+          create: {
+            workspaceId: workspace.id,
+            role: connection.role,
+            provider: "google",
+            externalEventId: event.externalEventId,
+            title: event.title,
+            start: event.start,
+            end: event.end,
+            allDay: event.allDay,
+            calendarId: connection.calendarId
+          }
+        })
+      )
+    ]);
+  }
+
   return {
     ok: true,
-    message: "Calendar metadata is current. Provider sync can be enabled with Google OAuth."
+    message: `Google Calendar refreshed (${importedCount} events).`
   };
 }
 

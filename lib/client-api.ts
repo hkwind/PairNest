@@ -1,4 +1,4 @@
-import type { BootstrapPayload, Role } from "@/types/pairnest";
+import type { BootstrapPayload, CustomEventItem, GoalItem, Role, WishlistItem, WorkspaceSettings } from "@/types/pairnest";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -27,13 +27,13 @@ export const api = {
     return request<BootstrapPayload>(`/api/bootstrap?coupleId=${encodeURIComponent(coupleId)}`);
   },
   saveSettings(coupleId: string, payload: Record<string, unknown>) {
-    return request("/api/settings", {
+    return request<{ ok: boolean; settings: WorkspaceSettings }>("/api/settings", {
       method: "PUT",
       body: JSON.stringify({ coupleId, ...payload })
     });
   },
   addWishlist(coupleId: string, payload: Record<string, unknown>) {
-    return request("/api/wishlist", {
+    return request<WishlistItem>("/api/wishlist", {
       method: "POST",
       body: JSON.stringify({ coupleId, ...payload })
     });
@@ -45,7 +45,7 @@ export const api = {
     });
   },
   addGoal(coupleId: string, payload: Record<string, unknown>) {
-    return request("/api/goals", {
+    return request<GoalItem>("/api/goals", {
       method: "POST",
       body: JSON.stringify({ coupleId, ...payload })
     });
@@ -57,7 +57,7 @@ export const api = {
     });
   },
   addEvent(coupleId: string, payload: Record<string, unknown>) {
-    return request("/api/events", {
+    return request<CustomEventItem>("/api/events", {
       method: "POST",
       body: JSON.stringify({ coupleId, ...payload })
     });

@@ -6,9 +6,11 @@ import { api } from "@/lib/client-api";
 import { parseAnniversaryConfig, parseColors } from "@/lib/defaults";
 import type {
   BootstrapPayload,
+  CustomEventItem,
   GoalItem,
   MergedEvent,
   Role,
+  Source,
   WishlistItem
 } from "@/types/pairnest";
 import { Icons } from "@/components/icons";
@@ -35,8 +37,8 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
   const [loadError, setLoadError] = useState("");
   const [toast, setToast] = useState("");
 
-  const loadAll = useCallback(async () => {
-    setBusy("Loading workspace...");
+  const loadAll = useCallback(async (quiet = false) => {
+    if (!quiet) setBusy("Loading workspace...");
     try {
       setLoadError("");
       setData(await api.bootstrap(coupleId));
@@ -45,12 +47,27 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
       setLoadError(message);
       showToast(message);
     } finally {
-      setBusy("");
+      if (!quiet) setBusy("");
     }
   }, [coupleId]);
 
   useEffect(() => {
     void loadAll();
+  }, [loadAll]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const targetScreen = params.get("screen");
+    const connectedRole = params.get("calendarConnected");
+    const calendarError = params.get("calendarError");
+    if (targetScreen && navItems.some((item) => item.screen === targetScreen)) {
+      setScreen(targetScreen as Screen);
+    }
+    if (connectedRole) {
+      showToast("Google Calendar connected");
+      void loadAll(true);
+    }
+    if (calendarError) showToast(calendarError);
   }, [loadAll]);
 
   useEffect(() => {
@@ -76,24 +93,27 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
     window.setTimeout(() => setToast(""), 3200);
   }
 
-  async function mutate(label: string, action: () => Promise<unknown>) {
-    setBusy(label);
+  async function mutate(action: () => Promise<unknown>, onError?: () => void) {
     try {
       await action();
-      await loadAll();
     } catch (error) {
+      onError?.();
       showToast(error instanceof Error ? error.message : "Something went wrong");
-    } finally {
-      setBusy("");
     }
+  }
+
+  function updateData(updater: (current: BootstrapPayload) => BootstrapPayload) {
+    setData((current) => (current ? updater(current) : current));
+  }
+
+  function connectGoogle(role: Role) {
+    window.location.href = `/api/google/start?coupleId=${encodeURIComponent(coupleId)}&role=${role}`;
   }
 
   const cssVars = {
     "--source-a": colors.userA,
     "--source-b": colors.userB,
-    "--source-shared": colors.shared,
-    "--primary": colors.userA,
-    "--accent": colors.userB
+    "--source-shared": colors.shared
   } as CSSProperties;
 
   return (
@@ -118,7 +138,7 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
       <div className="app-main">
         <header className="topbar">
           <Brand title={settings?.workspaceName || "PairNest"} subtitle={subtitle(screen)} />
-          <button className="icon-btn" onClick={loadAll} type="button" aria-label="Refresh">
+          <button className="icon-btn" onClick={() => loadAll()} type="button" aria-label="Refresh">
             <Icons.RefreshCw size={20} />
           </button>
         </header>
@@ -151,16 +171,28 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
                 <WishlistScreen
                   items={data.wishlist}
                   onAdd={() => setModal("wishlist")}
-                  onDelete={(id) =>
-                    mutate("Deleting wishlist item...", () => api.removeWishlist(coupleId, id))
-                  }
+                  onDelete={(id) => {
+                    const previous = data;
+                    updateData((current) => ({
+                      ...current,
+                      wishlist: current.wishlist.filter((item) => item.id !== id)
+                    }));
+                    void mutate(() => api.removeWishlist(coupleId, id), () => setData(previous));
+                  }}
                 />
               )}
               {screen === "goals" && (
                 <GoalsScreen
                   items={data.bucket}
                   onAdd={() => setModal("goal")}
-                  onDelete={(id) => mutate("Deleting future goal...", () => api.removeGoal(coupleId, id))}
+                  onDelete={(id) => {
+                    const previous = data;
+                    updateData((current) => ({
+                      ...current,
+                      bucket: current.bucket.filter((item) => item.id !== id)
+                    }));
+                    void mutate(() => api.removeGoal(coupleId, id), () => setData(previous));
+                  }}
                 />
               )}
               {screen === "calendar" && (
@@ -169,11 +201,21 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
                   view={calendarView}
                   onView={setCalendarView}
                   onAdd={() => setModal("event")}
-                  onDelete={(id) => mutate("Deleting event...", () => api.removeEvent(coupleId, id))}
+                  onDelete={(id) => {
+                    const previous = data;
+                    updateData((current) => ({
+                      ...current,
+                      customEvents: current.customEvents.filter((item) => item.id !== id),
+                      mergedEvents: current.mergedEvents.filter((event) => event.id !== id)
+                    }));
+                    void mutate(() => api.removeEvent(coupleId, id), () => setData(previous));
+                  }}
                   onRefresh={() =>
-                    mutate("Refreshing calendar...", async () => {
+                    mutate(async () => {
+                      showToast("Refreshing Google Calendar...");
                       const result = await api.refreshCalendar(coupleId);
                       if (result.message) showToast(result.message);
+                      await loadAll(true);
                     })
                   }
                 />
@@ -181,14 +223,39 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
               {screen === "settings" && (
                 <SettingsScreen
                   data={data}
-                  onSave={(payload) => mutate("Saving settings...", () => api.saveSettings(coupleId, payload))}
-                  onConnect={(role, calendarId) =>
-                    mutate("Linking calendar...", () => api.connectCalendar(coupleId, role, calendarId))
+                  onSave={(payload) =>
+                    mutate(async () => {
+                      const result = await api.saveSettings(coupleId, payload);
+                      updateData((current) => ({ ...current, settings: result.settings }));
+                      showToast("Settings saved");
+                      await loadAll(true);
+                    })
                   }
+                  onConnect={connectGoogle}
                   onDisconnect={(role) =>
-                    mutate("Disconnecting calendar...", () => api.disconnectCalendar(coupleId, role))
+                    mutate(async () => {
+                      await api.disconnectCalendar(coupleId, role);
+                      updateData((current) => {
+                        const googleStatus = { ...current.googleStatus };
+                        if (role === "a") {
+                          googleStatus.aConnected = false;
+                          googleStatus.a = { ...googleStatus.a, calendarId: "", calendarName: "" };
+                        } else {
+                          googleStatus.bConnected = false;
+                          googleStatus.b = { ...googleStatus.b, calendarId: "", calendarName: "" };
+                        }
+                        return { ...current, googleStatus };
+                      });
+                    })
                   }
-                  onRefresh={() => mutate("Refreshing calendar...", () => api.refreshCalendar(coupleId))}
+                  onRefresh={() =>
+                    mutate(async () => {
+                      showToast("Refreshing Google Calendar...");
+                      const result = await api.refreshCalendar(coupleId);
+                      if (result.message) showToast(result.message);
+                      await loadAll(true);
+                    })
+                  }
                 />
               )}
             </>
@@ -226,8 +293,10 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
           partnerBName={partnerBName}
           onClose={() => setModal(null)}
           onSubmit={(payload) =>
-            mutate("Adding wishlist item...", async () => {
-              await api.addWishlist(coupleId, payload);
+            mutate(async () => {
+              setModal(null);
+              const item = await api.addWishlist(coupleId, payload);
+              updateData((current) => ({ ...current, wishlist: [item, ...current.wishlist] }));
               setModal(null);
               showToast("Wishlist item added");
             })
@@ -240,8 +309,10 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
           partnerBName={partnerBName}
           onClose={() => setModal(null)}
           onSubmit={(payload) =>
-            mutate("Adding future goal...", async () => {
-              await api.addGoal(coupleId, payload);
+            mutate(async () => {
+              setModal(null);
+              const item = await api.addGoal(coupleId, payload);
+              updateData((current) => ({ ...current, bucket: [item, ...current.bucket] }));
               setModal(null);
               showToast("Future goal added");
             })
@@ -252,8 +323,16 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
         <EventModal
           onClose={() => setModal(null)}
           onSubmit={(payload) =>
-            mutate("Adding event...", async () => {
-              await api.addEvent(coupleId, payload);
+            mutate(async () => {
+              setModal(null);
+              const item = await api.addEvent(coupleId, payload);
+              updateData((current) => ({
+                ...current,
+                customEvents: [item, ...current.customEvents],
+                mergedEvents: [...current.mergedEvents, toMergedEvent(item, current)].sort(
+                  (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
+                )
+              }));
               setModal(null);
               setScreen("calendar");
               showToast("Shared event added");
@@ -423,14 +502,13 @@ function SettingsScreen({
 }: {
   data: BootstrapPayload;
   onSave: (payload: Record<string, unknown>) => void;
-  onConnect: (role: Role, calendarId: string) => void;
+  onConnect: (role: Role) => void;
   onDisconnect: (role: Role) => void;
   onRefresh: () => void;
 }) {
   const settings = data.settings;
   const colors = parseColors(settings.colors);
   const config = parseAnniversaryConfig(settings.anniversaryConfig);
-  const [calendarId, setCalendarId] = useState("primary");
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -497,12 +575,11 @@ function SettingsScreen({
           <h3>Calendar connection</h3>
           <span className="pill primary">{data.googleStatus.currentRole || "Not linked"}</span>
         </div>
-        <p className="muted-copy">Each person can record their calendar connection. OAuth sync belongs in the provider integration layer, while PairNest keeps the app calendar and cache in Postgres.</p>
+        <p className="muted-copy">Connect Google Calendar for each person. PairNest stores the connection securely in Postgres and merges upcoming Google events with shared app events.</p>
         <div className="form">
-          <Field label="Calendar ID" name="calendarId" value={calendarId} onChange={setCalendarId} />
           <div className="button-row">
-            <button className="secondary-btn" onClick={() => onConnect("a", calendarId)} type="button">Link as {settings.partnerAName}</button>
-            <button className="secondary-btn" onClick={() => onConnect("b", calendarId)} type="button">Link as {settings.partnerBName}</button>
+            <button className="secondary-btn" onClick={() => onConnect("a")} type="button">Connect {settings.partnerAName}</button>
+            <button className="secondary-btn" onClick={() => onConnect("b")} type="button">Connect {settings.partnerBName}</button>
           </div>
           <div className="button-row">
             <button className="secondary-btn" onClick={() => onDisconnect("a")} type="button">Disconnect A</button>
@@ -510,8 +587,8 @@ function SettingsScreen({
           </div>
           <button className="primary-btn fit" onClick={onRefresh} type="button">Refresh my calendar link</button>
           <div className="status-pill-row">
-            <span className="pill">{settings.partnerAName} {data.googleStatus.aConnected ? "linked" : "not linked"}</span>
-            <span className="pill">{settings.partnerBName} {data.googleStatus.bConnected ? "linked" : "not linked"}</span>
+            <span className="pill">{settings.partnerAName} {data.googleStatus.aConnected ? `linked: ${data.googleStatus.a.calendarName || "Google Calendar"}` : "not linked"}</span>
+            <span className="pill">{settings.partnerBName} {data.googleStatus.bConnected ? `linked: ${data.googleStatus.b.calendarName || "Google Calendar"}` : "not linked"}</span>
           </div>
         </div>
       </section>
@@ -841,6 +918,26 @@ function DeleteButton({ onClick }: { onClick: () => void }) {
 
 function Empty({ text }: { text: string }) {
   return <div className="empty-state">{text}</div>;
+}
+
+function toMergedEvent(item: CustomEventItem, data: BootstrapPayload): MergedEvent {
+  const colors = parseColors(data.settings.colors);
+  const source = item.source as Source;
+  return {
+    id: item.id,
+    title: item.title,
+    start: item.start,
+    end: item.end,
+    allDay: item.start.length <= 10,
+    source,
+    sourceLabel:
+      source === "a" ? data.settings.partnerAName : source === "b" ? data.settings.partnerBName : "Shared",
+    color: source === "a" ? colors.userA : source === "b" ? colors.userB : colors.shared,
+    note: item.note,
+    kind: "app",
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt
+  };
 }
 
 function getUpcoming(events: MergedEvent[]) {

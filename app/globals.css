@@ -1,23 +1,30 @@
 :root {
-  --bg: #fbf6ec;
-  --surface: #fffdf8;
-  --surface-2: #f4eadb;
-  --surface-3: #eadcc7;
-  --ink: #1e241f;
-  --text: #25251f;
-  --muted: #746f64;
-  --faint: #a89d8d;
-  --border: #e1d2bd;
-  --primary: #0f766e;
-  --accent: #d95d55;
-  --gold: #d99b2b;
-  --source-a: #0f766e;
-  --source-b: #d95d55;
-  --source-shared: #4f6f52;
-  --shadow: 0 22px 52px rgba(75, 53, 29, 0.12);
-  --shadow-sm: 0 8px 22px rgba(75, 53, 29, 0.08);
-  --radius: 16px;
-  --radius-sm: 10px;
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f7f7f5;
+  --surface-3: #f1f1f1;
+  --ink: #000000;
+  --text: #000000;
+  --muted: #000000;
+  --faint: #666666;
+  --border: #e6e6e6;
+  --primary: #000000;
+  --accent: #ff3d8b;
+  --gold: #dceeb1;
+  --block-lime: #dceeb1;
+  --block-lilac: #c5b0f4;
+  --block-cream: #f4ecd6;
+  --block-pink: #efd4d4;
+  --block-mint: #c8e6cd;
+  --block-coral: #f3c9b6;
+  --block-navy: #1f1d3d;
+  --source-a: #000000;
+  --source-b: #ff3d8b;
+  --source-shared: #1ea64a;
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  --shadow-sm: none;
+  --radius: 24px;
+  --radius-sm: 8px;
   --nav-height: 70px;
   --topbar-height: 58px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -65,11 +72,7 @@ a {
   height: 100dvh;
   min-height: 100dvh;
   overflow: hidden;
-  background:
-    linear-gradient(135deg, rgba(15, 118, 110, 0.14), transparent 32%),
-    linear-gradient(180deg, rgba(255, 253, 248, 0.72), rgba(251, 246, 236, 0.92)),
-    repeating-linear-gradient(90deg, rgba(37, 37, 31, 0.024) 0 1px, transparent 1px 44px),
-    var(--bg);
+  background: var(--bg);
 }
 
 .app-main {
@@ -91,8 +94,8 @@ a {
   gap: 12px;
   min-height: calc(var(--topbar-height) + var(--safe-top));
   padding: calc(var(--safe-top) + 8px) 16px 8px;
-  border-bottom: 1px solid rgba(221, 215, 207, 0.74);
-  background: rgba(255, 253, 248, 0.88);
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(18px);
 }
 
@@ -108,18 +111,17 @@ a {
   width: 42px;
   height: 42px;
   flex: 0 0 auto;
-  border-radius: 13px;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.24), transparent 42%),
-    linear-gradient(135deg, var(--primary), var(--accent));
-  box-shadow: var(--shadow);
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: var(--ink);
+  box-shadow: none;
 }
 
 .brand-mark::before,
 .brand-mark::after {
   position: absolute;
   content: "";
-  border: 2px solid rgba(255, 255, 255, 0.88);
+  border: 2px solid #ffffff;
   border-radius: 999px;
 }
 
@@ -129,7 +131,7 @@ a {
 
 .brand-mark::after {
   inset: 15px 8px 8px 15px;
-  border-color: rgba(255, 255, 255, 0.5);
+  border-color: #ffffff;
 }
 
 .title-wrap {
@@ -146,13 +148,13 @@ a {
 
 .title-wrap h1 {
   font-size: 1.02rem;
-  font-weight: 900;
+  font-weight: 700;
   line-height: 1.1;
 }
 
 .title-wrap p {
   margin-top: 4px;
-  color: var(--muted);
+  color: var(--faint);
   font-size: 0.84rem;
 }
 
@@ -212,7 +214,7 @@ a {
 
 .screen-header h2 {
   font-size: 1.7rem;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 1.02;
 }
 
@@ -230,10 +232,11 @@ a {
 }
 
 .eyebrow {
-  color: var(--primary);
+  color: var(--ink);
   font-size: 0.76rem;
-  font-weight: 950;
-  letter-spacing: 0.08em;
+  font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+  font-weight: 400;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -254,22 +257,12 @@ a {
   min-height: 164px;
   overflow: hidden;
   padding: 20px;
-  border-color: rgba(15, 118, 110, 0.18);
-  background:
-    linear-gradient(135deg, rgba(255, 253, 248, 0.94), rgba(255, 243, 226, 0.88)),
-    var(--surface);
+  border-color: transparent;
+  background: var(--block-lime);
 }
 
 .hero-card::after {
-  position: absolute;
-  top: -42px;
-  right: -42px;
-  width: 164px;
-  height: 164px;
-  background: conic-gradient(from 180deg, rgba(15, 118, 110, 0.16), rgba(217, 93, 85, 0.12), transparent 72%);
-  transform: rotate(10deg);
-  content: "";
-  pointer-events: none;
+  content: none;
 }
 
 .hero-card h2 {
@@ -278,7 +271,7 @@ a {
   max-width: 620px;
   margin-top: 14px;
   font-size: 2.05rem;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 1.04;
 }
 
@@ -299,20 +292,18 @@ a {
   gap: 8px;
   min-height: 96px;
   padding: 16px;
-  background:
-    linear-gradient(180deg, rgba(255, 253, 248, 0.98), rgba(255, 249, 239, 0.94)),
-    var(--surface);
+  background: var(--surface-2);
 }
 
 .mini-stat span {
-  color: var(--muted);
+  color: var(--ink);
   font-size: 0.82rem;
   font-weight: 700;
 }
 
 .mini-stat strong {
   font-size: 1.7rem;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 1;
 }
 
@@ -333,7 +324,7 @@ a {
 .panel h3,
 .list-card h3 {
   font-size: 1rem;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .list-card {
@@ -351,17 +342,17 @@ a {
   gap: 6px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: rgba(244, 234, 219, 0.78);
-  color: var(--muted);
+  background: var(--surface);
+  color: var(--ink);
   padding: 6px 10px;
   font-size: 0.8rem;
   font-weight: 800;
 }
 
 .pill.primary {
-  border-color: color-mix(in srgb, var(--primary) 22%, white);
-  background: color-mix(in srgb, var(--primary) 12%, white);
-  color: var(--primary);
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #ffffff;
 }
 
 .source-a {
@@ -390,7 +381,7 @@ a {
 .ghost-btn,
 .danger-icon {
   min-height: 44px;
-  border-radius: 14px;
+  border-radius: 999px;
   transition: 160ms ease;
 }
 
@@ -402,12 +393,12 @@ a {
   width: 44px;
   min-width: 44px;
   border: 1px solid var(--border);
-  background: var(--surface);
-  box-shadow: 0 2px 0 rgba(37, 37, 31, 0.04);
+  background: var(--surface-2);
+  box-shadow: none;
 }
 
 .danger-icon {
-  color: #a13544;
+  color: var(--ink);
 }
 
 .primary-btn,
@@ -419,26 +410,25 @@ a {
   gap: 8px;
   padding: 0 15px;
   font-size: 0.92rem;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .primary-btn {
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--primary) 92%, white), var(--primary));
+  background: var(--ink);
   color: #fff;
-  box-shadow: 0 9px 22px color-mix(in srgb, var(--primary) 24%, transparent);
+  box-shadow: none;
 }
 
 .secondary-btn {
   border: 1px solid var(--border);
-  background: rgba(255, 253, 248, 0.9);
+  background: var(--surface);
 }
 
 .ghost-btn {
   min-height: 36px;
   padding: 0;
   background: transparent;
-  color: var(--primary);
+  color: var(--ink);
   font-size: 0.9rem;
   font-weight: 800;
 }
@@ -449,7 +439,7 @@ a {
 
 .inline-link {
   width: fit-content;
-  color: var(--primary);
+  color: var(--ink);
   font-weight: 800;
   text-decoration: none;
 }
@@ -465,7 +455,7 @@ a {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--primary), var(--gold), var(--accent));
+  background: var(--ink);
 }
 
 .small {
@@ -484,13 +474,13 @@ a {
   max-width: 380px;
   padding: 4px;
   border: 1px solid var(--border);
-  border-radius: 15px;
-  background: rgba(244, 234, 219, 0.72);
+  border-radius: 999px;
+  background: var(--surface);
 }
 
 .segmented button {
   min-height: 38px;
-  border-radius: 11px;
+  border-radius: 999px;
   background: transparent;
   color: var(--muted);
   font-size: 0.86rem;
@@ -498,9 +488,9 @@ a {
 }
 
 .segmented button.active {
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: 0 1px 7px rgba(30, 22, 12, 0.08);
+  background: var(--ink);
+  color: #ffffff;
+  box-shadow: none;
 }
 
 .month-grid {
@@ -523,8 +513,8 @@ a {
   gap: 5px;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 12px;
-  background: rgba(255, 253, 248, 0.82);
+  border-radius: 8px;
+  background: var(--surface);
   padding: 8px;
 }
 
@@ -539,7 +529,7 @@ a {
 .event-dot {
   overflow: hidden;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--source-color) 14%, white);
+  background: color-mix(in srgb, var(--source-color) 12%, white);
   color: var(--source-color);
   padding: 3px 6px;
   text-overflow: ellipsis;
@@ -564,7 +554,7 @@ a {
   display: grid;
   justify-items: center;
   gap: 3px;
-  border-radius: 14px;
+  border-radius: 8px;
   background: var(--surface-2);
   padding: 10px;
   color: var(--muted);
@@ -578,10 +568,10 @@ a {
   align-items: center;
   min-height: 58px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 8px;
   background: var(--surface);
   padding: 10px;
-  box-shadow: 0 1px 0 rgba(37, 37, 31, 0.03);
+  box-shadow: none;
 }
 
 .source-line {
@@ -630,13 +620,11 @@ a {
   gap: 16px;
   align-content: center;
   min-height: min(520px, calc(100dvh - var(--nav-height) - var(--topbar-height) - 56px));
-  border: 1px solid rgba(217, 93, 85, 0.24);
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  background:
-    linear-gradient(135deg, rgba(217, 93, 85, 0.08), transparent 42%),
-    var(--surface);
+  background: var(--block-pink);
   padding: 22px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
 }
 
 .app-error-panel h2 {
@@ -669,11 +657,11 @@ textarea {
   width: 100%;
   min-height: 46px;
   border: 1px solid var(--border);
-  border-radius: 13px;
+  border-radius: 8px;
   background: var(--surface);
   padding: 0 12px;
   outline: none;
-  box-shadow: inset 0 1px 0 rgba(37, 37, 31, 0.03);
+  box-shadow: none;
 }
 
 input:focus,
@@ -715,7 +703,7 @@ textarea {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 4px;
   min-height: calc(var(--nav-height) + var(--safe-bottom));
-  border-top: 1px solid rgba(221, 215, 207, 0.78);
+  border-top: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.94);
   padding: 8px 8px calc(8px + var(--safe-bottom));
   backdrop-filter: blur(14px);
@@ -726,7 +714,7 @@ textarea {
   place-items: center;
   gap: 2px;
   min-height: 48px;
-  border-radius: 15px;
+  border-radius: 999px;
   background: transparent;
   color: var(--muted);
   font-size: 0.68rem;
@@ -743,8 +731,8 @@ textarea {
 }
 
 .bottom-nav-btn.active {
-  background: color-mix(in srgb, var(--primary) 12%, white);
-  color: var(--primary);
+  background: var(--ink);
+  color: #ffffff;
 }
 
 .fab {
@@ -756,12 +744,12 @@ textarea {
   align-items: center;
   min-height: 50px;
   gap: 8px;
-  border-radius: 16px;
-  background: var(--primary);
+  border-radius: 999px;
+  background: var(--ink);
   color: #fff;
   padding: 0 16px;
   box-shadow: var(--shadow);
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .fab[hidden] {
@@ -776,7 +764,7 @@ textarea {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background: rgba(40, 37, 29, 0.34);
+  background: rgba(0, 0, 0, 0.6);
   padding: 12px;
 }
 
@@ -784,7 +772,8 @@ textarea {
   width: min(100%, 560px);
   max-height: min(86dvh, 760px);
   overflow-y: auto;
-  border-radius: 22px 22px 18px 18px;
+  border: 1px solid var(--border);
+  border-radius: 24px 24px 18px 18px;
   background: var(--surface);
   padding: 10px 16px 16px;
   box-shadow: var(--shadow);
@@ -795,7 +784,7 @@ textarea {
   height: 5px;
   margin: 0 auto 12px;
   border-radius: 999px;
-  background: var(--surface-3);
+  background: var(--ink);
 }
 
 .sheet-header {
@@ -809,7 +798,7 @@ textarea {
 .loading-mask {
   z-index: 60;
   align-items: center;
-  background: rgba(247, 246, 242, 0.55);
+  background: rgba(255, 255, 255, 0.55);
   pointer-events: none;
 }
 
@@ -831,7 +820,7 @@ textarea {
   bottom: calc(var(--nav-height) + var(--safe-bottom) + 18px);
   z-index: 70;
   max-width: min(420px, calc(100vw - 32px));
-  border-radius: 16px;
+  border-radius: 999px;
 }
 
 @media (max-width: 1023px) {
@@ -855,7 +844,7 @@ textarea {
   }
 
   .screen-header h2 {
-    font-size: 1.28rem;
+    font-size: 1.34rem;
   }
 
   .topbar .title-wrap p {
@@ -865,7 +854,7 @@ textarea {
   .brand-mark {
     width: 36px;
     height: 36px;
-    border-radius: 12px;
+    border-radius: 8px;
   }
 
   .title-wrap h1 {
@@ -874,7 +863,9 @@ textarea {
 
   .hero-card {
     min-height: 0;
-    padding: 14px;
+    margin-inline: -16px;
+    border-radius: 0;
+    padding: 18px 16px;
   }
 
   .hero-card h2 {
@@ -1020,7 +1011,7 @@ textarea {
   }
 
   .sheet {
-    border-radius: 22px;
+    border-radius: 24px;
   }
 }
 
@@ -1050,7 +1041,7 @@ textarea {
     gap: 24px;
     height: 100dvh;
     border-right: 1px solid var(--border);
-    background: rgba(255, 255, 255, 0.62);
+    background: var(--surface);
     padding: 24px 18px;
     backdrop-filter: blur(16px);
   }
@@ -1065,17 +1056,17 @@ textarea {
     align-items: center;
     min-height: 48px;
     gap: 10px;
-    border-radius: 14px;
+    border-radius: 999px;
     background: transparent;
     color: var(--muted);
     padding: 0 12px;
-    font-weight: 850;
+    font-weight: 600;
     text-align: left;
   }
 
   .nav-item.active {
-    background: color-mix(in srgb, var(--primary) 12%, white);
-    color: var(--primary);
+    background: var(--ink);
+    color: #ffffff;
   }
 
   .topbar,
