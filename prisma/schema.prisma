@@ -44,6 +44,7 @@ model Workspace {
   wishlistItems       WishlistItem[]
   goals               Goal[]
   events              Event[]
+  memories            MemoryEntry[]
   calendarConnections CalendarConnection[]
   calendarCache       CalendarCache[]
 }
@@ -67,6 +68,7 @@ model WishlistItem {
   title       String
   category    String    @default("General")
   link        String?
+  mapUrl      String?
   note        String?
   addedBy     String    @default("Someone")
   priority    String    @default("Medium")
@@ -87,6 +89,7 @@ model Goal {
   status      String    @default("Planned")
   owner       String    @default("Both")
   progress    Int       @default(0)
+  mapUrl      String?
   note        String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -103,6 +106,7 @@ model Event {
   end              DateTime?
   source           EventSource        @default(SHARED)
   note             String?
+  mapUrl           String?
   aCalendarEventId String?
   bCalendarEventId String?
   aSyncStatus      String             @default("not_connected")
@@ -114,6 +118,22 @@ model Event {
 
   @@index([workspaceId, start])
   @@index([workspaceId, deletedAt])
+}
+
+model MemoryEntry {
+  id          String    @id @default(cuid())
+  workspaceId String
+  eventKey    String
+  eventTitle  String
+  eventStart  DateTime
+  thoughts    String?
+  photoDataUrls String[] @default([])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, eventKey])
+  @@index([workspaceId, eventStart])
 }
 
 model CalendarConnection {

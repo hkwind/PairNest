@@ -26,6 +26,7 @@ export function generateAnniversaryEvents(settings: WorkspaceSettings): MergedEv
         sourceLabel: "Shared",
         color: colors.shared,
         note: "Monthly anniversary",
+        mapUrl: "",
         kind: "anniversary",
         createdAt: "",
         updatedAt: ""
@@ -47,6 +48,7 @@ export function generateAnniversaryEvents(settings: WorkspaceSettings): MergedEv
         sourceLabel: "Shared",
         color: colors.shared,
         note: "100-day anniversary",
+        mapUrl: "",
         kind: "anniversary",
         createdAt: "",
         updatedAt: ""

@@ -1,4 +1,4 @@
-import type { BootstrapPayload, CustomEventItem, GoalItem, Role, WishlistItem, WorkspaceSettings } from "@/types/pairnest";
+import type { BootstrapPayload, CustomEventItem, GoalItem, MemoryEntry, Role, WishlistItem, WorkspaceSettings } from "@/types/pairnest";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -38,6 +38,12 @@ export const api = {
       body: JSON.stringify({ coupleId, ...payload })
     });
   },
+  updateWishlist(coupleId: string, id: string, payload: Record<string, unknown>) {
+    return request<WishlistItem>("/api/wishlist", {
+      method: "PUT",
+      body: JSON.stringify({ coupleId, id, ...payload })
+    });
+  },
   removeWishlist(coupleId: string, id: string) {
     return request<{ ok: boolean }>("/api/wishlist", {
       method: "DELETE",
@@ -48,6 +54,12 @@ export const api = {
     return request<GoalItem>("/api/goals", {
       method: "POST",
       body: JSON.stringify({ coupleId, ...payload })
+    });
+  },
+  updateGoal(coupleId: string, id: string, payload: Record<string, unknown>) {
+    return request<GoalItem>("/api/goals", {
+      method: "PUT",
+      body: JSON.stringify({ coupleId, id, ...payload })
     });
   },
   removeGoal(coupleId: string, id: string) {
@@ -84,6 +96,12 @@ export const api = {
     return request<{ ok: boolean; message?: string }>("/api/calendar-links", {
       method: "PUT",
       body: JSON.stringify({ coupleId })
+    });
+  },
+  saveMemory(coupleId: string, payload: Record<string, unknown>) {
+    return request<MemoryEntry>("/api/memories", {
+      method: "PUT",
+      body: JSON.stringify({ coupleId, ...payload })
     });
   }
 };

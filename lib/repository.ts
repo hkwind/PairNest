@@ -9,6 +9,7 @@ import type {
   CustomEventItem,
   GoalItem,
   GoogleStatus,
+  MemoryEntry,
   MergedEvent,
   Role,
   Source,
@@ -59,7 +60,7 @@ export async function ensureWorkspace(slug: string) {
 
 export async function bootstrapWorkspace(slug: string): Promise<BootstrapPayload> {
   const workspace = await ensureWorkspace(slug);
-  const [wishlist, goals, customEvents, calendarConnections, calendarCache] =
+  const [wishlist, goals, customEvents, calendarConnections, calendarCache, memories] =
     await Promise.all([
       prisma.wishlistItem.findMany({
         where: { workspaceId: workspace.id },
@@ -84,6 +85,10 @@ export async function bootstrapWorkspace(slug: string): Promise<BootstrapPayload
       prisma.calendarCache.findMany({
         where: { workspaceId: workspace.id },
         orderBy: { start: "asc" }
+      }),
+      prisma.memoryEntry.findMany({
+        where: { workspaceId: workspace.id },
+        orderBy: { eventStart: "desc" }
       })
     ]);
 
@@ -102,6 +107,7 @@ export async function bootstrapWorkspace(slug: string): Promise<BootstrapPayload
       sourceLabel: item.role === "A" ? settings.partnerAName : settings.partnerBName,
       color: item.role === "A" ? parseColors(settings.colors).userA : parseColors(settings.colors).userB,
       note: "",
+      mapUrl: "",
       kind: "google",
       createdAt: item.fetchedAt.toISOString(),
       updatedAt: item.updatedAt.toISOString()
@@ -117,6 +123,7 @@ export async function bootstrapWorkspace(slug: string): Promise<BootstrapPayload
     settings,
     googleStatus,
     mergedEvents,
+    memories: memories.map(serializeMemory),
     syncResult: null,
     refreshResult: null,
     syncError: ""
@@ -171,6 +178,25 @@ export async function addWishlist(slug: string, payload: Record<string, unknown>
       title: required(payload.title, "title"),
       category: clean(payload.category, "General"),
       link: optional(payload.link),
+      mapUrl: optional(payload.mapUrl),
+      note: optional(payload.note),
+      addedBy: clean(payload.addedBy, "Someone"),
+      priority: clean(payload.priority, "Medium"),
+      status: clean(payload.status, "Saved")
+    }
+  });
+  return serializeWishlist(item);
+}
+
+export async function updateWishlist(slug: string, id: string, payload: Record<string, unknown>) {
+  const workspace = await ensureWorkspace(slug);
+  const item = await prisma.wishlistItem.update({
+    where: { id, workspaceId: workspace.id },
+    data: {
+      title: required(payload.title, "title"),
+      category: clean(payload.category, "General"),
+      link: optional(payload.link),
+      mapUrl: optional(payload.mapUrl),
       note: optional(payload.note),
       addedBy: clean(payload.addedBy, "Someone"),
       priority: clean(payload.priority, "Medium"),
@@ -197,6 +223,25 @@ export async function addGoal(slug: string, payload: Record<string, unknown>) {
       status: clean(payload.status, "Planned"),
       owner: clean(payload.owner, "Both"),
       progress: clampNumber(payload.progress, 0, 100, 0),
+      mapUrl: optional(payload.mapUrl),
+      note: optional(payload.note)
+    }
+  });
+  return serializeGoal(item);
+}
+
+export async function updateGoal(slug: string, id: string, payload: Record<string, unknown>) {
+  const workspace = await ensureWorkspace(slug);
+  const item = await prisma.goal.update({
+    where: { id, workspaceId: workspace.id },
+    data: {
+      title: required(payload.title, "title"),
+      type: clean(payload.type, "General"),
+      targetDate: parseDateOnly(String(payload.targetDate || "")),
+      status: clean(payload.status, "Planned"),
+      owner: clean(payload.owner, "Both"),
+      progress: clampNumber(payload.progress, 0, 100, 0),
+      mapUrl: optional(payload.mapUrl),
       note: optional(payload.note)
     }
   });
@@ -224,11 +269,45 @@ export async function addEvent(slug: string, payload: Record<string, unknown>) {
       end: parseDateInput(payload.end),
       source: toPrismaSource(payload.source),
       note: optional(payload.note),
+      mapUrl: optional(payload.mapUrl),
       aSyncStatus: connections.some((link) => link.role === "A") ? "pending" : "not_connected",
       bSyncStatus: connections.some((link) => link.role === "B") ? "pending" : "not_connected"
     }
   });
   return serializeCustomEvent(item);
+}
+
+export async function saveMemory(slug: string, payload: Record<string, unknown>) {
+  const workspace = await ensureWorkspace(slug);
+  const eventStart = parseDateInput(payload.eventStart);
+  if (!eventStart) throw new Error("eventStart is required");
+  const photoDataUrls = Array.isArray(payload.photoDataUrls)
+    ? payload.photoDataUrls.map((item) => String(item)).filter(Boolean).slice(0, 6)
+    : [];
+
+  const item = await prisma.memoryEntry.upsert({
+    where: {
+      workspaceId_eventKey: {
+        workspaceId: workspace.id,
+        eventKey: required(payload.eventKey, "eventKey")
+      }
+    },
+    update: {
+      eventTitle: required(payload.eventTitle, "eventTitle"),
+      eventStart,
+      thoughts: optional(payload.thoughts),
+      photoDataUrls
+    },
+    create: {
+      workspaceId: workspace.id,
+      eventKey: required(payload.eventKey, "eventKey"),
+      eventTitle: required(payload.eventTitle, "eventTitle"),
+      eventStart,
+      thoughts: optional(payload.thoughts),
+      photoDataUrls
+    }
+  });
+  return serializeMemory(item);
 }
 
 export async function removeEvent(slug: string, id: string) {
@@ -434,6 +513,7 @@ function serializeWishlist(item: Prisma.WishlistItemGetPayload<object>): Wishlis
     title: item.title,
     category: item.category,
     link: item.link || "",
+    mapUrl: item.mapUrl || "",
     note: item.note || "",
     addedBy: item.addedBy,
     priority: item.priority,
@@ -453,6 +533,7 @@ function serializeGoal(item: Prisma.GoalGetPayload<object>): GoalItem {
     status: item.status,
     owner: item.owner,
     progress: item.progress,
+    mapUrl: item.mapUrl || "",
     note: item.note || "",
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString()
@@ -468,11 +549,25 @@ function serializeCustomEvent(item: Prisma.EventGetPayload<object>): CustomEvent
     end: toIso(item.end),
     source: fromPrismaSource(item.source),
     note: item.note || "",
+    mapUrl: item.mapUrl || "",
     aCalendarEventId: item.aCalendarEventId || "",
     bCalendarEventId: item.bCalendarEventId || "",
     aSyncStatus: item.aSyncStatus,
     bSyncStatus: item.bSyncStatus,
     deletedAt: toIso(item.deletedAt),
+    createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString()
+  };
+}
+
+function serializeMemory(item: Prisma.MemoryEntryGetPayload<object>): MemoryEntry {
+  return {
+    id: item.id,
+    eventKey: item.eventKey,
+    eventTitle: item.eventTitle,
+    eventStart: item.eventStart.toISOString(),
+    thoughts: item.thoughts || "",
+    photoDataUrls: item.photoDataUrls,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString()
   };
@@ -497,6 +592,7 @@ function mergeEvents(
         source === "a" ? settings.partnerAName : source === "b" ? settings.partnerBName : "Shared",
       color: source === "a" ? colors.userA : source === "b" ? colors.userB : colors.shared,
       note: item.note,
+      mapUrl: item.mapUrl,
       kind: "app",
       createdAt: item.createdAt,
       updatedAt: item.updatedAt

@@ -19,6 +19,7 @@ export type WishlistItem = {
   title: string;
   category: string;
   link: string;
+  mapUrl: string;
   note: string;
   addedBy: string;
   priority: string;
@@ -36,6 +37,7 @@ export type GoalItem = {
   status: string;
   owner: string;
   progress: number;
+  mapUrl: string;
   note: string;
   createdAt: string;
   updatedAt: string;
@@ -49,6 +51,7 @@ export type CustomEventItem = {
   end: string;
   source: Source;
   note: string;
+  mapUrl: string;
   aCalendarEventId: string;
   bCalendarEventId: string;
   aSyncStatus: string;
@@ -68,7 +71,19 @@ export type MergedEvent = {
   sourceLabel: string;
   color: string;
   note: string;
+  mapUrl: string;
   kind: "app" | "google" | "anniversary";
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MemoryEntry = {
+  id: string;
+  eventKey: string;
+  eventTitle: string;
+  eventStart: string;
+  thoughts: string;
+  photoDataUrls: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -90,6 +105,7 @@ export type BootstrapPayload = {
   settings: WorkspaceSettings;
   googleStatus: GoogleStatus;
   mergedEvents: MergedEvent[];
+  memories: MemoryEntry[];
   syncResult: null;
   refreshResult: null;
   syncError: string;

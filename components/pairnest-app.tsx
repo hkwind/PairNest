@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties, FormEvent, ReactNode } from "react";
+import type { CSSProperties, ChangeEvent, FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/client-api";
 import { parseAnniversaryConfig, parseColors } from "@/lib/defaults";
@@ -8,6 +8,7 @@ import type {
   BootstrapPayload,
   CustomEventItem,
   GoalItem,
+  MemoryEntry,
   MergedEvent,
   Role,
   Source,
@@ -15,15 +16,17 @@ import type {
 } from "@/types/pairnest";
 import { Icons } from "@/components/icons";
 
-type Screen = "home" | "wishlist" | "goals" | "calendar" | "settings";
+type Screen = "home" | "wishlist" | "goals" | "calendar" | "memories" | "settings";
 type Modal = "wishlist" | "goal" | "event" | null;
 type CalendarView = "month" | "week" | "agenda";
+type SortMode = "newest" | "oldest" | "priority" | "progress";
 
 const navItems: { screen: Screen; label: string; Icon: typeof Icons.Home }[] = [
   { screen: "home", label: "Main", Icon: Icons.Home },
   { screen: "wishlist", label: "Wishlist", Icon: Icons.Gift },
   { screen: "goals", label: "Goals", Icon: Icons.ListTodo },
   { screen: "calendar", label: "Calendar", Icon: Icons.CalendarDays },
+  { screen: "memories", label: "Memories", Icon: Icons.Camera },
   { screen: "settings", label: "Settings", Icon: Icons.Settings }
 ];
 
@@ -33,6 +36,10 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
   const [screen, setScreen] = useState<Screen>("home");
   const [modal, setModal] = useState<Modal>(null);
   const [calendarView, setCalendarView] = useState<CalendarView>("month");
+  const [wishlistFilter, setWishlistFilter] = useState("All");
+  const [goalFilter, setGoalFilter] = useState("All");
+  const [wishlistSort, setWishlistSort] = useState<SortMode>("newest");
+  const [goalSort, setGoalSort] = useState<SortMode>("newest");
   const [busy, setBusy] = useState("Loading workspace...");
   const [loadError, setLoadError] = useState("");
   const [toast, setToast] = useState("");
@@ -170,7 +177,21 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
               {screen === "wishlist" && (
                 <WishlistScreen
                   items={data.wishlist}
+                  filter={wishlistFilter}
+                  sort={wishlistSort}
+                  onFilter={setWishlistFilter}
+                  onSort={setWishlistSort}
                   onAdd={() => setModal("wishlist")}
+                  onSave={(id, payload) =>
+                    mutate(async () => {
+                      const item = await api.updateWishlist(coupleId, id, payload);
+                      updateData((current) => ({
+                        ...current,
+                        wishlist: current.wishlist.map((entry) => (entry.id === id ? item : entry))
+                      }));
+                      showToast("Wishlist updated");
+                    })
+                  }
                   onDelete={(id) => {
                     const previous = data;
                     updateData((current) => ({
@@ -184,7 +205,21 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
               {screen === "goals" && (
                 <GoalsScreen
                   items={data.bucket}
+                  filter={goalFilter}
+                  sort={goalSort}
+                  onFilter={setGoalFilter}
+                  onSort={setGoalSort}
                   onAdd={() => setModal("goal")}
+                  onSave={(id, payload) =>
+                    mutate(async () => {
+                      const item = await api.updateGoal(coupleId, id, payload);
+                      updateData((current) => ({
+                        ...current,
+                        bucket: current.bucket.map((entry) => (entry.id === id ? item : entry))
+                      }));
+                      showToast("Goal updated");
+                    })
+                  }
                   onDelete={(id) => {
                     const previous = data;
                     updateData((current) => ({
@@ -216,6 +251,22 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
                       const result = await api.refreshCalendar(coupleId);
                       if (result.message) showToast(result.message);
                       await loadAll(true);
+                    })
+                  }
+                />
+              )}
+              {screen === "memories" && (
+                <MemoriesScreen
+                  events={data.mergedEvents}
+                  memories={data.memories}
+                  onSave={(payload) =>
+                    mutate(async () => {
+                      const memory = await api.saveMemory(coupleId, payload);
+                      updateData((current) => ({
+                        ...current,
+                        memories: upsertMemory(current.memories, memory)
+                      }));
+                      showToast("Memory saved");
                     })
                   }
                 />
@@ -264,7 +315,7 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
 
         <button
           className="fab"
-          hidden={screen === "home" || screen === "settings"}
+          hidden={screen === "home" || screen === "memories" || screen === "settings"}
           onClick={() => setModal(screen === "wishlist" ? "wishlist" : screen === "goals" ? "goal" : "event")}
           type="button"
         >
@@ -374,89 +425,83 @@ function HomeScreen({
   avgProgress: number;
   onGo: (screen: Screen) => void;
 }) {
-  const memoryMoments = getMemoryMoments(data.mergedEvents);
-
   return (
     <section className="screen screen-home">
-      <section className="hero-band">
-        <div className="hero-copy">
-          <span className="eyebrow">Couple workspace</span>
-          <h2>Everything important, in one place.</h2>
-          <p>Wishlist plans, future goals, shared dates, and the little milestones that make the week feel like yours.</p>
-          <div className="meta-row">
-            <span className="pill primary">Shared workspace</span>
-            <span className="pill status-pill status-warm">{getAnniversaryText(data)}</span>
-          </div>
-        </div>
-        <article className="memory-card">
-          <div className="memory-card-top">
-            <span className="memory-badge">Milestone</span>
-            <span className="memory-date">{data.settings.anniversary || "Set your date"}</span>
-          </div>
-          <div className="memory-photo">
-            <div className="memory-photo-note">
-              <span className="memory-photo-label">Next chapter</span>
-              <strong>{upcoming[0]?.title || "A quiet week together"}</strong>
-            </div>
-          </div>
-          <div className="memory-meta">
-            <strong>{memoryMoments[0]?.title || "Shared memories live here"}</strong>
-            <p>{memoryMoments[0] ? formatSmartDate(memoryMoments[0].start) : "Add events and goals to build your history."}</p>
-          </div>
-        </article>
+      <ScreenHeader title="Main page" description="A quick doorway into the shared workspace." />
+      <section className="overview-grid">
+        <OverviewTile label="Wishlist" value={data.wishlist.length} detail="Ideas, places, gifts" tone="accent-peach" onClick={() => onGo("wishlist")} />
+        <OverviewTile label="Future goals" value={data.bucket.length} detail={`${avgProgress}% average progress`} tone="accent-mint" onClick={() => onGo("goals")} />
+        <OverviewTile label="Upcoming events" value={upcoming.length} detail={upcoming[0]?.title || "No upcoming event"} tone="accent-coral" onClick={() => onGo("calendar")} />
+        <OverviewTile label="Past memories" value={data.memories.length} detail="Photos and thoughts" tone="accent-lilac" onClick={() => onGo("memories")} />
       </section>
-      <div className="stats-grid">
-        <MiniStat label="Wishlist" value={data.wishlist.length} />
-        <MiniStat label="Future goals" value={data.bucket.length} />
-        <MiniStat label="Upcoming events" value={upcoming.length} />
-        <MiniStat label="Avg goal progress" value={`${avgProgress}%`} />
-      </div>
-      <section className="memory-strip">
-        <PanelTitle title="Date history" action="Open calendar" onAction={() => onGo("calendar")} />
-        <div className="memory-grid">
-          {memoryMoments.map((event) => (
-            <article className="memory-mini-card" key={event.id}>
-              <span className={`memory-dot source-${event.source}`} />
-              <div>
-                <strong>{event.title}</strong>
-                <p>{formatSmartDate(event.start)}</p>
-              </div>
-            </article>
-          ))}
-        </div>
+      <section className="panel panel-coral">
+        <PanelTitle title="Next up" action="Open calendar" onAction={() => onGo("calendar")} />
+        <EventList events={upcoming.slice(0, 4)} compact />
       </section>
-      <div className="dashboard-grid">
-        <section className="panel panel-coral">
-          <PanelTitle title="Upcoming events" action="Open calendar" onAction={() => onGo("calendar")} />
-          <EventList events={upcoming.slice(0, 5)} compact />
-        </section>
-        <section className="panel panel-cream">
-          <PanelTitle title="Status overview" action="Open settings" onAction={() => onGo("settings")} />
-          <div className="list">
-            <StatusRow label={`${data.settings.partnerAName} calendar`} value={data.googleStatus.aConnected ? "Linked" : "Not linked"} />
-            <StatusRow label={`${data.settings.partnerBName} calendar`} value={data.googleStatus.bConnected ? "Linked" : "Not linked"} />
-            <StatusRow label="Workspace" value={data.settings.workspaceName} />
-          </div>
-        </section>
-      </div>
     </section>
+  );
+}
+
+function OverviewTile({
+  label,
+  value,
+  detail,
+  tone,
+  onClick
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+  tone: string;
+  onClick: () => void;
+}) {
+  return (
+    <button className={`overview-tile ${tone}`} onClick={onClick} type="button">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </button>
   );
 }
 
 function WishlistScreen({
   items,
+  filter,
+  sort,
+  onFilter,
+  onSort,
   onAdd,
+  onSave,
   onDelete
 }: {
   items: WishlistItem[];
+  filter: string;
+  sort: SortMode;
+  onFilter: (value: string) => void;
+  onSort: (value: SortMode) => void;
   onAdd: () => void;
+  onSave: (id: string, payload: Record<string, unknown>) => void;
   onDelete: (id: string) => void;
 }) {
+  const categories = uniqueOptions(items.map((item) => item.category));
+  const visible = sortWishlist(filterCollection(items, filter, (item) => item.category), sort);
   return (
     <section className="screen">
       <ScreenHeader title="Wishlist" description="Shared ideas, easy to add and review." action="Add" onAction={onAdd} />
+      <ListControls
+        filter={filter}
+        sort={sort}
+        filterOptions={categories}
+        sortOptions={[
+          { value: "newest", label: "Newest" },
+          { value: "oldest", label: "Oldest" },
+          { value: "priority", label: "Priority" }
+        ]}
+        onFilter={onFilter}
+        onSort={onSort}
+      />
       <div className="responsive-list">
-        {items.length ? items.map((item) => <WishlistCard key={item.id} item={item} onDelete={onDelete} />) : <Empty text="No wishlist items yet." />}
+        {visible.length ? visible.map((item) => <WishlistCard key={item.id} item={item} onSave={onSave} onDelete={onDelete} />) : <Empty text="No wishlist items match this view." />}
       </div>
     </section>
   );
@@ -464,18 +509,42 @@ function WishlistScreen({
 
 function GoalsScreen({
   items,
+  filter,
+  sort,
+  onFilter,
+  onSort,
   onAdd,
+  onSave,
   onDelete
 }: {
   items: GoalItem[];
+  filter: string;
+  sort: SortMode;
+  onFilter: (value: string) => void;
+  onSort: (value: SortMode) => void;
   onAdd: () => void;
+  onSave: (id: string, payload: Record<string, unknown>) => void;
   onDelete: (id: string) => void;
 }) {
+  const types = uniqueOptions(items.map((item) => item.type));
+  const visible = sortGoals(filterCollection(items, filter, (item) => item.type), sort);
   return (
     <section className="screen">
       <ScreenHeader title="Future goals" description="Longer-term plans with progress tracking." action="Add" onAction={onAdd} />
+      <ListControls
+        filter={filter}
+        sort={sort}
+        filterOptions={types}
+        sortOptions={[
+          { value: "newest", label: "Newest" },
+          { value: "oldest", label: "Oldest" },
+          { value: "progress", label: "Progress" }
+        ]}
+        onFilter={onFilter}
+        onSort={onSort}
+      />
       <div className="responsive-list">
-        {items.length ? items.map((item) => <GoalCard key={item.id} item={item} onDelete={onDelete} />) : <Empty text="No future goals yet." />}
+        {visible.length ? visible.map((item) => <GoalCard key={item.id} item={item} onSave={onSave} onDelete={onDelete} />) : <Empty text="No future goals match this view." />}
       </div>
     </section>
   );
@@ -524,6 +593,110 @@ function CalendarScreen({
         <EventList events={upcoming} onDelete={onDelete} />
       </section>
     </section>
+  );
+}
+
+function MemoriesScreen({
+  events,
+  memories,
+  onSave
+}: {
+  events: MergedEvent[];
+  memories: MemoryEntry[];
+  onSave: (payload: Record<string, unknown>) => void;
+}) {
+  const memoryMap = new Map(memories.map((memory) => [memory.eventKey, memory]));
+  const pastEvents = events
+    .filter((event) => new Date(event.start).getTime() < Date.now())
+    .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
+
+  return (
+    <section className="screen">
+      <ScreenHeader title="往事回顧" description="Add photos and thoughts to past moments, then revisit them together." />
+      {pastEvents.length ? (
+        <div className="memory-review-list">
+          {pastEvents.map((event) => (
+            <MemoryComposer
+              event={event}
+              key={eventKey(event)}
+              memory={memoryMap.get(eventKey(event))}
+              onSave={onSave}
+            />
+          ))}
+        </div>
+      ) : (
+        <Empty text="Past events will appear here after their date has passed." />
+      )}
+    </section>
+  );
+}
+
+function MemoryComposer({
+  event,
+  memory,
+  onSave
+}: {
+  event: MergedEvent;
+  memory?: MemoryEntry;
+  onSave: (payload: Record<string, unknown>) => void;
+}) {
+  const [thoughts, setThoughts] = useState(memory?.thoughts || "");
+  const [photoDataUrls, setPhotoDataUrls] = useState<string[]>(memory?.photoDataUrls || []);
+
+  useEffect(() => {
+    setThoughts(memory?.thoughts || "");
+    setPhotoDataUrls(memory?.photoDataUrls || []);
+  }, [memory?.thoughts, memory?.photoDataUrls]);
+
+  async function addPhotos(eventChange: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(eventChange.target.files || []).slice(0, 6 - photoDataUrls.length);
+    const dataUrls = await Promise.all(files.map(readFileAsDataUrl));
+    setPhotoDataUrls((current) => [...current, ...dataUrls].slice(0, 6));
+    eventChange.target.value = "";
+  }
+
+  function save() {
+    onSave({
+      eventKey: eventKey(event),
+      eventTitle: event.title,
+      eventStart: event.start,
+      thoughts,
+      photoDataUrls
+    });
+  }
+
+  return (
+    <article className="memory-review-card">
+      <div className="memory-review-head">
+        <div>
+          <span className={`event-kind-badge kind-${event.kind}`}>{event.kind === "anniversary" ? "Milestone" : event.kind === "google" ? "Calendar" : "Shared"}</span>
+          <h3>{event.title}</h3>
+          <p>{formatSmartDate(event.start)}</p>
+        </div>
+        {event.mapUrl && <a className="icon-btn" href={event.mapUrl} target="_blank" rel="noreferrer" aria-label="Open map"><Icons.MapPin size={18} /></a>}
+      </div>
+      {photoDataUrls.length > 0 && (
+        <div className="memory-photo-grid">
+          {photoDataUrls.map((src, index) => (
+            <figure key={`${src.slice(0, 32)}-${index}`}>
+              <img src={src} alt={`Memory ${index + 1}`} />
+              <button className="danger-icon photo-remove" onClick={() => setPhotoDataUrls((current) => current.filter((_, itemIndex) => itemIndex !== index))} type="button" aria-label="Remove photo">
+                <Icons.X size={14} />
+              </button>
+            </figure>
+          ))}
+        </div>
+      )}
+      <Textarea label="Thoughts" name="thoughts" value={thoughts} onChange={setThoughts} placeholder="What do you want to remember?" />
+      <div className="button-row">
+        <label className="secondary-btn file-btn">
+          <Icons.Image size={16} />
+          Add photos
+          <input accept="image/*" multiple onChange={addPhotos} type="file" />
+        </label>
+        <button className="primary-btn" onClick={save} type="button"><Icons.Save size={16} />Save memory</button>
+      </div>
+    </article>
   );
 }
 
@@ -653,6 +826,7 @@ function WishlistModal(props: {
         <Select label="Priority" name="priority" options={["Low", "Medium", "High"]} defaultValue="Medium" />
         <Select label="Added by" name="addedBy" options={[props.partnerAName, props.partnerBName, "Both"]} />
         <Field label="Link" name="link" type="url" placeholder="https://example.com" />
+        <Field label="Google Maps URL" name="mapUrl" type="url" placeholder="https://maps.google.com/..." />
         <Textarea label="Note" name="note" placeholder="Anything worth remembering" />
         <ModalActions onClose={props.onClose} submitLabel="Add item" />
       </form>
@@ -675,6 +849,7 @@ function GoalModal(props: {
         <Select label="Status" name="status" options={["Planned", "In progress", "Done", "Paused"]} />
         <Select label="Owner" name="owner" options={["Both", props.partnerAName, props.partnerBName]} />
         <Field label="Progress %" name="progress" type="number" min={0} max={100} defaultValue="0" />
+        <Field label="Google Maps URL" name="mapUrl" type="url" placeholder="https://maps.google.com/..." />
         <Textarea label="Note" name="note" placeholder="Budget, milestone, or next step" />
         <ModalActions onClose={props.onClose} submitLabel="Add goal" />
       </form>
@@ -693,6 +868,7 @@ function EventModal(props: {
         <Field label="Start" name="start" type="datetime-local" required />
         <Field label="End" name="end" type="datetime-local" />
         <Select label="Scope" name="source" options={["shared", "a", "b"]} labels={["Shared", "Partner A side", "Partner B side"]} />
+        <Field label="Google Maps URL" name="mapUrl" type="url" placeholder="https://maps.google.com/..." />
         <Textarea label="Note" name="note" placeholder="Reservation, location, or reminder" />
         <ModalActions onClose={props.onClose} submitLabel="Add event" />
       </form>
@@ -776,11 +952,25 @@ function Select(props: { label: string; name: string; options: string[]; labels?
   );
 }
 
-function Textarea(props: { label: string; name: string; placeholder?: string }) {
+function Textarea(props: {
+  label: string;
+  name: string;
+  placeholder?: string;
+  defaultValue?: string;
+  value?: string;
+  onChange?: (value: string) => void;
+}) {
   return (
     <div className="field">
       <label htmlFor={props.name}>{props.label}</label>
-      <textarea id={props.name} name={props.name} placeholder={props.placeholder} />
+      <textarea
+        id={props.name}
+        name={props.name}
+        placeholder={props.placeholder}
+        defaultValue={props.value === undefined ? props.defaultValue : undefined}
+        value={props.value}
+        onChange={(event) => props.onChange?.(event.target.value)}
+      />
     </div>
   );
 }
@@ -824,10 +1014,53 @@ function PanelTitle({ title, action, onAction }: { title: string; action: string
   );
 }
 
-function WishlistCard({ item, onDelete }: { item: WishlistItem; onDelete: (id: string) => void }) {
+function ListControls({
+  filter,
+  sort,
+  filterOptions,
+  sortOptions,
+  onFilter,
+  onSort
+}: {
+  filter: string;
+  sort: SortMode;
+  filterOptions: string[];
+  sortOptions: { value: SortMode; label: string }[];
+  onFilter: (value: string) => void;
+  onSort: (value: SortMode) => void;
+}) {
   return (
-    <article className={`list-card ${wishlistAccentClass(item.category)}`}>
-      <div className="item-top">
+    <section className="list-controls">
+      <div className="field compact-field">
+        <label htmlFor="filter">Filter</label>
+        <select id="filter" value={filter} onChange={(event) => onFilter(event.target.value)}>
+          <option value="All">All</option>
+          {filterOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      </div>
+      <div className="field compact-field">
+        <label htmlFor="sort">Sort</label>
+        <select id="sort" value={sort} onChange={(event) => onSort(event.target.value as SortMode)}>
+          {sortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+      </div>
+    </section>
+  );
+}
+
+function WishlistCard({
+  item,
+  onSave,
+  onDelete
+}: {
+  item: WishlistItem;
+  onSave: (id: string, payload: Record<string, unknown>) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <article className={`list-card expandable-card ${wishlistAccentClass(item.category)}`}>
+      <button className="tile-button" onClick={() => setExpanded((value) => !value)} type="button">
         <div>
           <h3>{item.title}</h3>
           <div className="meta-row">
@@ -836,18 +1069,45 @@ function WishlistCard({ item, onDelete }: { item: WishlistItem; onDelete: (id: s
             <span className="pill person-pill">{item.addedBy}</span>
           </div>
         </div>
-        <DeleteButton onClick={() => onDelete(item.id)} />
-      </div>
+        <span className="expand-hint">{expanded ? "Close" : "Edit"}</span>
+      </button>
       {item.note && <p>{item.note}</p>}
-      {item.link && <a className="inline-link" href={item.link} target="_blank" rel="noreferrer">Open link</a>}
+      <div className="link-row">
+        {item.link && <a className="inline-link" href={item.link} target="_blank" rel="noreferrer">Open link</a>}
+        {item.mapUrl && <a className="inline-link map-link" href={item.mapUrl} target="_blank" rel="noreferrer"><Icons.MapPin size={15} /> Map</a>}
+      </div>
+      {expanded && (
+        <form className="form edit-form" onSubmit={(event) => handleForm(event, (payload) => onSave(item.id, payload), { status: item.status })}>
+          <Field label="Title" name="title" required defaultValue={item.title} />
+          <Select label="Category" name="category" options={["Travel", "Restaurant", "Gift", "Experience", "General"]} defaultValue={item.category} />
+          <Select label="Priority" name="priority" options={["Low", "Medium", "High"]} defaultValue={item.priority} />
+          <Field label="Added by" name="addedBy" defaultValue={item.addedBy} />
+          <Field label="Link" name="link" type="url" defaultValue={item.link} />
+          <Field label="Google Maps URL" name="mapUrl" type="url" defaultValue={item.mapUrl} />
+          <Textarea label="Note" name="note" defaultValue={item.note} />
+          <div className="button-row">
+            <button className="primary-btn" type="submit"><Icons.Save size={16} />Save</button>
+            <button className="secondary-btn" onClick={() => onDelete(item.id)} type="button"><Icons.Trash2 size={16} />Delete</button>
+          </div>
+        </form>
+      )}
     </article>
   );
 }
 
-function GoalCard({ item, onDelete }: { item: GoalItem; onDelete: (id: string) => void }) {
+function GoalCard({
+  item,
+  onSave,
+  onDelete
+}: {
+  item: GoalItem;
+  onSave: (id: string, payload: Record<string, unknown>) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
   return (
-    <article className={`list-card ${goalAccentClass(item.type)}`}>
-      <div className="item-top">
+    <article className={`list-card expandable-card ${goalAccentClass(item.type)}`}>
+      <button className="tile-button" onClick={() => setExpanded((value) => !value)} type="button">
         <div>
           <h3>{item.title}</h3>
           <div className="meta-row">
@@ -856,11 +1116,28 @@ function GoalCard({ item, onDelete }: { item: GoalItem; onDelete: (id: string) =
             <span className="pill person-pill">{item.owner}</span>
           </div>
         </div>
-        <DeleteButton onClick={() => onDelete(item.id)} />
-      </div>
+        <span className="expand-hint">{expanded ? "Close" : "Edit"}</span>
+      </button>
       <div className="progress-track"><span style={{ width: `${item.progress}%` }} /></div>
       <div className="split small"><span>{item.targetDate || "No target date"}</span><strong>{item.progress}%</strong></div>
       {item.note && <p>{item.note}</p>}
+      {item.mapUrl && <a className="inline-link map-link" href={item.mapUrl} target="_blank" rel="noreferrer"><Icons.MapPin size={15} /> Map</a>}
+      {expanded && (
+        <form className="form edit-form" onSubmit={(event) => handleForm(event, (payload) => onSave(item.id, payload))}>
+          <Field label="Goal title" name="title" required defaultValue={item.title} />
+          <Select label="Type" name="type" options={["Travel", "Learning", "Experience", "Finance", "Home", "General"]} defaultValue={item.type} />
+          <Field label="Target date" name="targetDate" type="date" defaultValue={item.targetDate} />
+          <Select label="Status" name="status" options={["Planned", "In progress", "Done", "Paused"]} defaultValue={item.status} />
+          <Field label="Owner" name="owner" defaultValue={item.owner} />
+          <Field label="Progress %" name="progress" type="number" min={0} max={100} defaultValue={String(item.progress)} />
+          <Field label="Google Maps URL" name="mapUrl" type="url" defaultValue={item.mapUrl} />
+          <Textarea label="Note" name="note" defaultValue={item.note} />
+          <div className="button-row">
+            <button className="primary-btn" type="submit"><Icons.Save size={16} />Save</button>
+            <button className="secondary-btn" onClick={() => onDelete(item.id)} type="button"><Icons.Trash2 size={16} />Delete</button>
+          </div>
+        </form>
+      )}
     </article>
   );
 }
@@ -929,6 +1206,7 @@ function EventRow({ event, onDelete }: { event: MergedEvent; onDelete?: (id: str
         <p>{formatSmartDate(event.start)} {event.note ? `- ${event.note}` : ""}</p>
       </div>
       <span className={`event-kind-badge kind-${event.kind}`}>{event.kind === "app" ? "Shared" : event.kind === "anniversary" ? "Milestone" : "Calendar"}</span>
+      {event.mapUrl && <a className="icon-btn" href={event.mapUrl} target="_blank" rel="noreferrer" aria-label="Open map"><Icons.MapPin size={16} /></a>}
       {onDelete && event.kind === "app" && <DeleteButton onClick={() => onDelete(event.id)} />}
     </article>
   );
@@ -969,6 +1247,7 @@ function toMergedEvent(item: CustomEventItem, data: BootstrapPayload): MergedEve
       source === "a" ? data.settings.partnerAName : source === "b" ? data.settings.partnerBName : "Shared",
     color: source === "a" ? colors.userA : source === "b" ? colors.userB : colors.shared,
     note: item.note,
+    mapUrl: item.mapUrl,
     kind: "app",
     createdAt: item.createdAt,
     updatedAt: item.updatedAt
@@ -980,6 +1259,51 @@ function getUpcoming(events: MergedEvent[]) {
   return events
     .filter((event) => new Date(event.start).getTime() >= now.getTime() - 86400000)
     .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+}
+
+function filterCollection<T>(items: T[], filter: string, getter: (item: T) => string) {
+  if (filter === "All") return items;
+  return items.filter((item) => getter(item) === filter);
+}
+
+function uniqueOptions(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+}
+
+function sortWishlist(items: WishlistItem[], sort: SortMode) {
+  const priorities: Record<string, number> = { High: 3, Medium: 2, Low: 1 };
+  return [...items].sort((a, b) => {
+    if (sort === "oldest") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    if (sort === "priority") return (priorities[b.priority] || 0) - (priorities[a.priority] || 0);
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+}
+
+function sortGoals(items: GoalItem[], sort: SortMode) {
+  return [...items].sort((a, b) => {
+    if (sort === "oldest") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    if (sort === "progress") return b.progress - a.progress;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+}
+
+function upsertMemory(items: MemoryEntry[], item: MemoryEntry) {
+  const exists = items.some((entry) => entry.eventKey === item.eventKey);
+  if (!exists) return [item, ...items];
+  return items.map((entry) => (entry.eventKey === item.eventKey ? item : entry));
+}
+
+function eventKey(event: MergedEvent) {
+  return `${event.kind}:${event.id}:${event.start}`;
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 }
 
 function getMemoryMoments(events: MergedEvent[]) {
@@ -1048,6 +1372,7 @@ function subtitle(screen: Screen) {
     wishlist: "Shared wishlist",
     goals: "Future plans",
     calendar: "Merged calendar",
+    memories: "Past memories",
     settings: "Workspace and calendar settings"
   }[screen];
 }
