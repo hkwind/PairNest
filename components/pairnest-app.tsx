@@ -646,16 +646,25 @@ function MemoriesScreen({
   onSave: (payload: Record<string, unknown>) => void;
 }) {
   const memoryMap = new Map(memories.map((memory) => [memory.eventKey, memory]));
-  const pastEvents = events
-    .filter((event) => new Date(event.start).getTime() < Date.now())
+  const [showCalendarEvents, setShowCalendarEvents] = useState(false);
+  const pastSharedEvents = events
+    .filter((event) => event.kind === "app" && event.source === "shared" && new Date(event.start).getTime() < Date.now())
+    .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
+  const pastCalendarEvents = events
+    .filter((event) => event.kind === "google" && new Date(event.start).getTime() < Date.now())
     .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
 
   return (
     <section className="screen">
       <ScreenHeader title="往事回顧" description="Add photos and thoughts to past moments, then revisit them together." />
-      {pastEvents.length ? (
+      <div className="screen-actions">
+        <button className="secondary-btn" onClick={() => setShowCalendarEvents((current) => !current)} type="button">
+          {showCalendarEvents ? "Hide calendar events" : "Add a calendar event"}
+        </button>
+      </div>
+      {pastSharedEvents.length ? (
         <div className="memory-review-list">
-          {pastEvents.map((event) => (
+          {pastSharedEvents.map((event) => (
             <MemoryComposer
               event={event}
               key={eventKey(event)}
@@ -665,7 +674,19 @@ function MemoriesScreen({
           ))}
         </div>
       ) : (
-        <Empty text="Past events will appear here after their date has passed." />
+        <Empty text="Past shared PairNest events will appear here after their date has passed." />
+      )}
+      {showCalendarEvents && (
+        <section className="memory-calendar-events">
+          <h2>Past calendar events</h2>
+          {pastCalendarEvents.length ? (
+            <div className="memory-review-list">
+              {pastCalendarEvents.map((event) => (
+                <MemoryComposer event={event} key={eventKey(event)} memory={memoryMap.get(eventKey(event))} onSave={onSave} />
+              ))}
+            </div>
+          ) : <Empty text="No past imported calendar events yet. Refresh your connected calendar first." />}
+        </section>
       )}
     </section>
   );
