@@ -531,7 +531,7 @@ async function findMemoriesSafely(workspaceId: string) {
   }
 }
 
-function serializeWishlist(item: Omit<Prisma.WishlistItemGetPayload<object>, "mapUrl"> & { mapUrl?: string | null }): WishlistItem {
+function serializeWishlist(item: Pick<Prisma.WishlistItemGetPayload<object>, "id" | "title" | "category" | "link" | "note" | "addedBy" | "priority" | "status" | "createdAt" | "updatedAt"> & { mapUrl?: string | null }): WishlistItem {
   return {
     id: item.id,
     coupleId: "",
@@ -548,7 +548,7 @@ function serializeWishlist(item: Omit<Prisma.WishlistItemGetPayload<object>, "ma
   };
 }
 
-function serializeGoal(item: Omit<Prisma.GoalGetPayload<object>, "mapUrl"> & { mapUrl?: string | null }): GoalItem {
+function serializeGoal(item: Pick<Prisma.GoalGetPayload<object>, "id" | "title" | "type" | "targetDate" | "status" | "owner" | "progress" | "note" | "createdAt" | "updatedAt"> & { mapUrl?: string | null }): GoalItem {
   return {
     id: item.id,
     coupleId: "",
@@ -565,7 +565,7 @@ function serializeGoal(item: Omit<Prisma.GoalGetPayload<object>, "mapUrl"> & { m
   };
 }
 
-function serializeCustomEvent(item: Omit<Prisma.EventGetPayload<object>, "mapUrl"> & { mapUrl?: string | null }): CustomEventItem {
+function serializeCustomEvent(item: Pick<Prisma.EventGetPayload<object>, "id" | "title" | "start" | "end" | "source" | "note" | "aCalendarEventId" | "bCalendarEventId" | "aSyncStatus" | "bSyncStatus" | "deletedAt" | "createdAt" | "updatedAt"> & { mapUrl?: string | null }): CustomEventItem {
   return {
     id: item.id,
     coupleId: "",
