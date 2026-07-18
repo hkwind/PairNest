@@ -682,6 +682,8 @@ function MemoryComposer({
 }) {
   const [thoughts, setThoughts] = useState(memory?.thoughts || "");
   const [photoDataUrls, setPhotoDataUrls] = useState<string[]>(memory?.photoDataUrls || []);
+  const [photoError, setPhotoError] = useState("");
+  const [optimizingPhotos, setOptimizingPhotos] = useState(false);
 
   useEffect(() => {
     setThoughts(memory?.thoughts || "");
@@ -690,8 +692,16 @@ function MemoryComposer({
 
   async function addPhotos(eventChange: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(eventChange.target.files || []).slice(0, 6 - photoDataUrls.length);
-    const dataUrls = await Promise.all(files.map(readFileAsDataUrl));
-    setPhotoDataUrls((current) => [...current, ...dataUrls].slice(0, 6));
+    setPhotoError("");
+    setOptimizingPhotos(true);
+    try {
+      const dataUrls = await Promise.all(files.map(compressMemoryPhoto));
+      setPhotoDataUrls((current) => [...current, ...dataUrls].slice(0, 6));
+    } catch (error) {
+      setPhotoError(error instanceof Error ? error.message : "Could not prepare these photos.");
+    } finally {
+      setOptimizingPhotos(false);
+    }
     eventChange.target.value = "";
   }
 
@@ -731,11 +741,12 @@ function MemoryComposer({
       <div className="button-row">
         <label className="secondary-btn file-btn">
           <Icons.Image size={16} />
-          Add photos
-          <input accept="image/*" multiple onChange={addPhotos} type="file" />
+          {optimizingPhotos ? "Preparing photos..." : "Add photos"}
+          <input accept="image/*" multiple onChange={addPhotos} type="file" disabled={optimizingPhotos} />
         </label>
         <button className="primary-btn" onClick={save} type="button"><Icons.Save size={16} />Save memory</button>
       </div>
+      {photoError && <p className="form-error" role="alert">{photoError}</p>}
     </article>
   );
 }
@@ -1443,13 +1454,43 @@ function eventKey(event: MergedEvent) {
   return `${event.kind}:${event.id}:${event.start}`;
 }
 
-function readFileAsDataUrl(file: File) {
+function readFileAsDataUrl(file: Blob) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ""));
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
+}
+
+async function compressMemoryPhoto(file: File) {
+  if (!file.type.startsWith("image/")) throw new Error("Choose an image file.");
+  const source = await readFileAsDataUrl(file);
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const next = new Image();
+    next.onload = () => resolve(next);
+    next.onerror = () => reject(new Error("This image could not be opened."));
+    next.src = source;
+  });
+
+  let width = Math.min(image.naturalWidth, 1600);
+  let height = Math.round(image.naturalHeight * (width / image.naturalWidth));
+  const maximumBytes = 420 * 1024;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Your browser could not prepare this image.");
+    context.drawImage(image, 0, 0, width, height);
+    const quality = Math.max(0.5, 0.82 - attempt * 0.08);
+    const dataUrl = canvas.toDataURL("image/jpeg", quality);
+    const base64Length = dataUrl.length - dataUrl.indexOf(",") - 1;
+    if (Math.ceil(base64Length * 0.75) <= maximumBytes || attempt === 4) return dataUrl;
+    width = Math.round(width * 0.78);
+    height = Math.round(height * 0.78);
+  }
+  throw new Error("Could not prepare this image.");
 }
 
 function getMemoryMoments(events: MergedEvent[]) {
