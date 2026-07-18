@@ -9,6 +9,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(await bootstrapWorkspace(coupleId));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown bootstrap error";
+    const errorCode = typeof error === "object" && error && "code" in error
+      ? String((error as { code?: unknown }).code)
+      : undefined;
     console.error("PairNest bootstrap failed", { coupleId, message });
 
     return NextResponse.json(
@@ -16,7 +19,8 @@ export async function GET(request: NextRequest) {
         ok: false,
         code: "BOOTSTRAP_FAILED",
         message:
-          "PairNest could not load the workspace. Check DATABASE_URL, DATABASE_URL_UNPOOLED, and whether Prisma migrations have run.",
+          "PairNest could not load the workspace. Check /api/health for the database schema and migration status.",
+        errorCode,
         detail: process.env.NODE_ENV === "production" ? undefined : message
       },
       { status: 500 }

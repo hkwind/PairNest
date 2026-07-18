@@ -4,16 +4,30 @@ import { prisma } from "@/lib/prisma";
 export async function GET() {
   try {
     const workspaceCount = await prisma.workspace.count();
-    const calendarConnectionColumns = await prisma.$queryRaw<Array<{ column_name: string }>>`
-      SELECT column_name
+    const schemaRows = await prisma.$queryRaw<Array<{ table_name: string; column_name: string }>>`
+      SELECT table_name, column_name
       FROM information_schema.columns
-      WHERE table_name = 'CalendarConnection'
-      ORDER BY ordinal_position
+      WHERE table_schema = 'public'
     `;
 
-    const columnNames = calendarConnectionColumns.map((column) => column.column_name);
+    const hasColumn = (tableName: string, columnName: string) =>
+      schemaRows.some((row) => row.table_name === tableName && row.column_name === columnName);
+    const tableNames = new Set(schemaRows.map((row) => row.table_name));
+    const columnNames = schemaRows.filter((row) => row.table_name === "CalendarConnection").map((row) => row.column_name);
     const requiredGoogleColumns = ["accessToken", "refreshToken", "tokenType", "scope", "expiresAt"];
     const missingGoogleColumns = requiredGoogleColumns.filter((column) => !columnNames.includes(column));
+    const requiredMapColumns = ["WishlistItem.mapUrl", "Goal.mapUrl", "Event.mapUrl"];
+    const missingMapColumns = requiredMapColumns.filter((entry) => {
+      const [tableName, columnName] = entry.split(".");
+      return !hasColumn(tableName, columnName);
+    });
+    const missingTables = tableNames.has("MemoryEntry") ? [] : ["MemoryEntry"];
+    const recentMigrations = await prisma.$queryRaw<Array<{ migration_name: string; finished_at: Date | null }>>`
+      SELECT migration_name, finished_at
+      FROM "_prisma_migrations"
+      ORDER BY started_at DESC
+      LIMIT 10
+    `.catch(() => []);
 
     return NextResponse.json({
       ok: true,
@@ -25,7 +39,10 @@ export async function GET() {
       },
       schema: {
         calendarConnectionColumns: columnNames,
-        missingGoogleColumns
+        missingGoogleColumns,
+        missingMapColumns,
+        missingTables,
+        recentMigrations
       }
     });
   } catch (error) {

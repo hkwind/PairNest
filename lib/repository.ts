@@ -64,15 +64,28 @@ export async function bootstrapWorkspace(slug: string): Promise<BootstrapPayload
     await Promise.all([
       prisma.wishlistItem.findMany({
         where: { workspaceId: workspace.id },
-        orderBy: { createdAt: "desc" }
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true, title: true, category: true, link: true, note: true,
+          addedBy: true, priority: true, status: true, createdAt: true, updatedAt: true
+        }
       }),
       prisma.goal.findMany({
         where: { workspaceId: workspace.id },
-        orderBy: { createdAt: "desc" }
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true, title: true, type: true, targetDate: true, status: true,
+          owner: true, progress: true, note: true, createdAt: true, updatedAt: true
+        }
       }),
       prisma.event.findMany({
         where: { workspaceId: workspace.id, deletedAt: null },
-        orderBy: { start: "asc" }
+        orderBy: { start: "asc" },
+        select: {
+          id: true, title: true, start: true, end: true, source: true, note: true,
+          aCalendarEventId: true, bCalendarEventId: true, aSyncStatus: true,
+          bSyncStatus: true, deletedAt: true, createdAt: true, updatedAt: true
+        }
       }),
       prisma.calendarConnection.findMany({
         where: { workspaceId: workspace.id, active: true },
@@ -86,10 +99,7 @@ export async function bootstrapWorkspace(slug: string): Promise<BootstrapPayload
         where: { workspaceId: workspace.id },
         orderBy: { start: "asc" }
       }),
-      prisma.memoryEntry.findMany({
-        where: { workspaceId: workspace.id },
-        orderBy: { eventStart: "desc" }
-      })
+      findMemoriesSafely(workspace.id)
     ]);
 
   const settings = serializeSettings(workspace);
@@ -506,14 +516,29 @@ function serializeGoogleStatus(
   };
 }
 
-function serializeWishlist(item: Prisma.WishlistItemGetPayload<object>): WishlistItem {
+async function findMemoriesSafely(workspaceId: string) {
+  try {
+    return await prisma.memoryEntry.findMany({
+      where: { workspaceId },
+      orderBy: { eventStart: "desc" }
+    });
+  } catch (error) {
+    const code = typeof error === "object" && error && "code" in error
+      ? String((error as { code?: unknown }).code)
+      : "";
+    if (code === "P2021" || code === "P2022") return [];
+    throw error;
+  }
+}
+
+function serializeWishlist(item: Omit<Prisma.WishlistItemGetPayload<object>, "mapUrl"> & { mapUrl?: string | null }): WishlistItem {
   return {
     id: item.id,
     coupleId: "",
     title: item.title,
     category: item.category,
     link: item.link || "",
-    mapUrl: item.mapUrl || "",
+    mapUrl: (item as { mapUrl?: string | null }).mapUrl || "",
     note: item.note || "",
     addedBy: item.addedBy,
     priority: item.priority,
@@ -523,7 +548,7 @@ function serializeWishlist(item: Prisma.WishlistItemGetPayload<object>): Wishlis
   };
 }
 
-function serializeGoal(item: Prisma.GoalGetPayload<object>): GoalItem {
+function serializeGoal(item: Omit<Prisma.GoalGetPayload<object>, "mapUrl"> & { mapUrl?: string | null }): GoalItem {
   return {
     id: item.id,
     coupleId: "",
@@ -533,14 +558,14 @@ function serializeGoal(item: Prisma.GoalGetPayload<object>): GoalItem {
     status: item.status,
     owner: item.owner,
     progress: item.progress,
-    mapUrl: item.mapUrl || "",
+    mapUrl: (item as { mapUrl?: string | null }).mapUrl || "",
     note: item.note || "",
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString()
   };
 }
 
-function serializeCustomEvent(item: Prisma.EventGetPayload<object>): CustomEventItem {
+function serializeCustomEvent(item: Omit<Prisma.EventGetPayload<object>, "mapUrl"> & { mapUrl?: string | null }): CustomEventItem {
   return {
     id: item.id,
     coupleId: "",
@@ -549,7 +574,7 @@ function serializeCustomEvent(item: Prisma.EventGetPayload<object>): CustomEvent
     end: toIso(item.end),
     source: fromPrismaSource(item.source),
     note: item.note || "",
-    mapUrl: item.mapUrl || "",
+    mapUrl: (item as { mapUrl?: string | null }).mapUrl || "",
     aCalendarEventId: item.aCalendarEventId || "",
     bCalendarEventId: item.bCalendarEventId || "",
     aSyncStatus: item.aSyncStatus,
