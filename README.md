@@ -52,13 +52,13 @@ npm run dev
 2. Import the repository in Vercel.
 3. Add both `DATABASE_URL` and `DATABASE_URL_UNPOOLED` in Vercel Project Settings -> Environment Variables.
 4. For Google Calendar, add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI`.
-5. Use the default build command:
+5. Use the default build command. It generates Prisma Client but deliberately does not run migrations, so concurrent Vercel builds cannot block each other on Prisma's Postgres advisory lock:
 
 ```bash
 npm run build
 ```
 
-6. Run migrations against production from your machine or CI:
+6. Run migrations against production once, from a controlled CI job or your machine using the production `DATABASE_URL_UNPOOLED` value:
 
 ```bash
 npm run prisma:deploy
