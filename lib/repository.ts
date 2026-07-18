@@ -1,4 +1,5 @@
 import { EventSource, PartnerRole, Prisma } from "@prisma/client";
+import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { clampNumber, DEFAULT_COLORS, parseAnniversaryConfig, parseColors } from "@/lib/defaults";
 import { parseDateInput, parseDateOnly, toIso } from "@/lib/dates";
@@ -66,7 +67,7 @@ export async function bootstrapWorkspace(slug: string): Promise<BootstrapPayload
         where: { workspaceId: workspace.id },
         orderBy: { createdAt: "desc" },
         select: {
-          id: true, title: true, category: true, link: true, note: true,
+          id: true, title: true, category: true, link: true, mapUrl: true, note: true,
           addedBy: true, priority: true, status: true, createdAt: true, updatedAt: true
         }
       }),
@@ -75,7 +76,7 @@ export async function bootstrapWorkspace(slug: string): Promise<BootstrapPayload
         orderBy: { createdAt: "desc" },
         select: {
           id: true, title: true, type: true, targetDate: true, status: true,
-          owner: true, progress: true, note: true, createdAt: true, updatedAt: true
+          owner: true, progress: true, mapUrl: true, note: true, createdAt: true, updatedAt: true
         }
       }),
       prisma.event.findMany({
@@ -200,8 +201,11 @@ export async function addWishlist(slug: string, payload: Record<string, unknown>
 
 export async function updateWishlist(slug: string, id: string, payload: Record<string, unknown>) {
   const workspace = await ensureWorkspace(slug);
+  if (!id) throw new Error("Wishlist item id is required.");
+  const existing = await prisma.wishlistItem.findFirst({ where: { id, workspaceId: workspace.id } });
+  if (!existing) throw new Error("Wishlist item was not found in this workspace.");
   const item = await prisma.wishlistItem.update({
-    where: { id, workspaceId: workspace.id },
+    where: { id: existing.id },
     data: {
       title: required(payload.title, "title"),
       category: clean(payload.category, "General"),
@@ -242,8 +246,11 @@ export async function addGoal(slug: string, payload: Record<string, unknown>) {
 
 export async function updateGoal(slug: string, id: string, payload: Record<string, unknown>) {
   const workspace = await ensureWorkspace(slug);
+  if (!id) throw new Error("Goal id is required.");
+  const existing = await prisma.goal.findFirst({ where: { id, workspaceId: workspace.id } });
+  if (!existing) throw new Error("Goal was not found in this workspace.");
   const item = await prisma.goal.update({
-    where: { id, workspaceId: workspace.id },
+    where: { id: existing.id },
     data: {
       title: required(payload.title, "title"),
       type: clean(payload.type, "General"),
@@ -399,6 +406,82 @@ export async function connectGoogleCalendar(
   return connection;
 }
 
+export async function createGoogleCalendarSession(
+  slug: string,
+  role: Role,
+  payload: {
+    accessToken: string;
+    refreshToken: string;
+    tokenType: string;
+    scope: string;
+    expiresAt: Date;
+  }
+) {
+  const workspace = await ensureWorkspace(slug);
+  const session = await prisma.calendarOAuthSession.create({
+    data: {
+      id: randomUUID(),
+      workspaceId: workspace.id,
+      role: toPrismaRole(role),
+      accessToken: payload.accessToken,
+      refreshToken: payload.refreshToken || null,
+      tokenType: payload.tokenType,
+      scope: payload.scope,
+      expiresAt: payload.expiresAt,
+      expiresOn: new Date(Date.now() + 10 * 60 * 1000)
+    }
+  });
+  return session.id;
+}
+
+export async function getGoogleCalendarSession(sessionId: string) {
+  if (!sessionId) throw new Error("Google Calendar selection session expired. Reconnect to continue.");
+  const session = await prisma.calendarOAuthSession.findUnique({ where: { id: sessionId } });
+  if (!session || session.expiresOn.getTime() < Date.now()) {
+    if (session) await prisma.calendarOAuthSession.delete({ where: { id: session.id } });
+    throw new Error("Google Calendar selection session expired. Reconnect to continue.");
+  }
+  return session;
+}
+
+export async function completeGoogleCalendarSession(sessionId: string, calendarId: string, calendarName: string) {
+  const session = await getGoogleCalendarSession(sessionId);
+  const connection = await connectGoogleCalendarByWorkspace(session.workspaceId, session.role, {
+    calendarId,
+    calendarName,
+    accessToken: session.accessToken,
+    refreshToken: session.refreshToken || "",
+    tokenType: session.tokenType || "Bearer",
+    scope: session.scope || "",
+    expiresAt: session.expiresAt || new Date()
+  });
+  await prisma.calendarOAuthSession.delete({ where: { id: session.id } });
+  await refreshCalendarForWorkspace(session.workspaceId);
+  return connection;
+}
+
+async function connectGoogleCalendarByWorkspace(
+  workspaceId: string,
+  role: PartnerRole,
+  payload: {
+    calendarId: string;
+    calendarName: string;
+    accessToken: string;
+    refreshToken: string;
+    tokenType: string;
+    scope: string;
+    expiresAt: Date;
+  }
+) {
+  await prisma.calendarConnection.updateMany({
+    where: { workspaceId, role, active: true, provider: "google" },
+    data: { active: false }
+  });
+  return prisma.calendarConnection.create({
+    data: { workspaceId, role, principalId: `google-${role.toLowerCase()}`, provider: "google", ...payload, refreshToken: payload.refreshToken || null, active: true }
+  });
+}
+
 export async function disconnectCalendar(slug: string, role: Role) {
   const workspace = await ensureWorkspace(slug);
   const result = await prisma.calendarConnection.updateMany({
@@ -410,8 +493,12 @@ export async function disconnectCalendar(slug: string, role: Role) {
 
 export async function refreshCalendar(slug: string) {
   const workspace = await ensureWorkspace(slug);
+  return refreshCalendarForWorkspace(workspace.id);
+}
+
+async function refreshCalendarForWorkspace(workspaceId: string) {
   const connections = await prisma.calendarConnection.findMany({
-    where: { workspaceId: workspace.id, active: true, provider: "google" }
+    where: { workspaceId, active: true, provider: "google" }
   });
 
   if (!connections.length) {
@@ -427,7 +514,7 @@ export async function refreshCalendar(slug: string) {
     await prisma.$transaction([
       prisma.calendarCache.deleteMany({
         where: {
-          workspaceId: workspace.id,
+          workspaceId,
           role: connection.role,
           provider: "google",
           externalEventId: { notIn: seenIds.length ? seenIds : [""] }
@@ -437,7 +524,7 @@ export async function refreshCalendar(slug: string) {
         prisma.calendarCache.upsert({
           where: {
             workspaceId_role_provider_externalEventId: {
-              workspaceId: workspace.id,
+              workspaceId,
               role: connection.role,
               provider: "google",
               externalEventId: event.externalEventId
@@ -452,7 +539,7 @@ export async function refreshCalendar(slug: string) {
             fetchedAt: new Date()
           },
           create: {
-            workspaceId: workspace.id,
+            workspaceId,
             role: connection.role,
             provider: "google",
             externalEventId: event.externalEventId,

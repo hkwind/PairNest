@@ -5,12 +5,15 @@ import { prisma } from "@/lib/prisma";
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_CALENDAR_API = "https://www.googleapis.com/calendar/v3";
-const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events.readonly";
+const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 
 export type GoogleOAuthState = {
   coupleId: string;
   role: "a" | "b";
+  nonce: string;
 };
+
+export type GoogleCalendarOption = { id: string; name: string; primary: boolean };
 
 type TokenResponse = {
   access_token: string;
@@ -30,6 +33,10 @@ type GoogleEvent = {
 
 type GoogleEventsResponse = {
   items?: GoogleEvent[];
+};
+
+type GoogleCalendarListResponse = {
+  items?: Array<{ id?: string; summary?: string; primary?: boolean }>;
 };
 
 export function getGoogleConfig(origin: string) {
@@ -67,10 +74,21 @@ export function parseGoogleState(value: string | null): GoogleOAuthState {
     throw new Error("Invalid Google OAuth state signature.");
   }
   const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as GoogleOAuthState;
-  if (!parsed.coupleId || (parsed.role !== "a" && parsed.role !== "b")) {
+  if (!parsed.coupleId || !parsed.nonce || (parsed.role !== "a" && parsed.role !== "b")) {
     throw new Error("Invalid Google OAuth state.");
   }
   return parsed;
+}
+
+export async function fetchGoogleCalendars(accessToken: string): Promise<GoogleCalendarOption[]> {
+  const response = await fetch(`${GOOGLE_CALENDAR_API}/users/me/calendarList?minAccessRole=reader`, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  if (!response.ok) throw new Error(await readGoogleError(response, "Could not fetch Google Calendars."));
+  const data = (await response.json()) as GoogleCalendarListResponse;
+  return (data.items || [])
+    .filter((calendar): calendar is { id: string; summary?: string; primary?: boolean } => Boolean(calendar.id))
+    .map((calendar) => ({ id: calendar.id, name: calendar.summary || "Untitled calendar", primary: Boolean(calendar.primary) }));
 }
 
 function signState(state: GoogleOAuthState, secret: string) {

@@ -43,6 +43,7 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
   const [busy, setBusy] = useState("Loading workspace...");
   const [loadError, setLoadError] = useState("");
   const [toast, setToast] = useState("");
+  const [calendarSelectionOpen, setCalendarSelectionOpen] = useState(false);
 
   const loadAll = useCallback(async (quiet = false) => {
     if (!quiet) setBusy("Loading workspace...");
@@ -67,6 +68,7 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
     const targetScreen = params.get("screen");
     const connectedRole = params.get("calendarConnected");
     const calendarError = params.get("calendarError");
+    const calendarSelect = params.get("calendarSelect");
     if (targetScreen && navItems.some((item) => item.screen === targetScreen)) {
       setScreen(targetScreen as Screen);
     }
@@ -74,6 +76,7 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
       showToast("Google Calendar connected");
       void loadAll(true);
     }
+    if (calendarSelect) setCalendarSelectionOpen(true);
     if (calendarError) showToast(calendarError);
   }, [loadAll]);
 
@@ -103,9 +106,11 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
   async function mutate(action: () => Promise<unknown>, onError?: () => void) {
     try {
       await action();
+      return true;
     } catch (error) {
       onError?.();
       showToast(error instanceof Error ? error.message : "Something went wrong");
+      return false;
     }
   }
 
@@ -307,6 +312,13 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
                       await loadAll(true);
                     })
                   }
+                  calendarSelectionOpen={calendarSelectionOpen}
+                  onCalendarSelected={async (calendarName) => {
+                    setCalendarSelectionOpen(false);
+                    window.history.replaceState({}, "", "/?screen=settings");
+                    showToast(`${calendarName} connected`);
+                    await loadAll(true);
+                  }}
                 />
               )}
             </>
@@ -480,7 +492,7 @@ function WishlistScreen({
   onFilter: (value: string) => void;
   onSort: (value: SortMode) => void;
   onAdd: () => void;
-  onSave: (id: string, payload: Record<string, unknown>) => void;
+  onSave: (id: string, payload: Record<string, unknown>) => Promise<boolean>;
   onDelete: (id: string) => void;
 }) {
   const categories = uniqueOptions(items.map((item) => item.category));
@@ -523,7 +535,7 @@ function GoalsScreen({
   onFilter: (value: string) => void;
   onSort: (value: SortMode) => void;
   onAdd: () => void;
-  onSave: (id: string, payload: Record<string, unknown>) => void;
+  onSave: (id: string, payload: Record<string, unknown>) => Promise<boolean>;
   onDelete: (id: string) => void;
 }) {
   const types = uniqueOptions(items.map((item) => item.type));
@@ -700,18 +712,78 @@ function MemoryComposer({
   );
 }
 
+function GoogleCalendarSelector({ onConnected }: { onConnected: (calendarName: string) => Promise<void> }) {
+  const [calendars, setCalendars] = useState<{ id: string; name: string; primary: boolean }[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const result = await api.getGoogleCalendars();
+        setCalendars(result.calendars);
+        setSelectedId(result.calendars.find((calendar) => calendar.primary)?.id || result.calendars[0]?.id || "");
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Could not load Google Calendars.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedId || saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      const result = await api.selectGoogleCalendar(selectedId);
+      await onConnected(result.calendarName);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not connect Google Calendar.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="panel">
+      <h3>Choose Google Calendar</h3>
+      {loading ? <p className="muted-copy">Loading calendars...</p> : calendars.length ? (
+        <form className="form" onSubmit={submit}>
+          <div className="field">
+            <label htmlFor="google-calendar">Calendar</label>
+            <select id="google-calendar" value={selectedId} onChange={(event) => setSelectedId(event.target.value)} disabled={saving}>
+              {calendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.name}{calendar.primary ? " (Primary)" : ""}</option>)}
+            </select>
+          </div>
+          {error && <p className="form-error" role="alert">{error}</p>}
+          <button className="primary-btn" type="submit" disabled={saving}>{saving ? "Connecting..." : "Use this calendar"}</button>
+        </form>
+      ) : <p className="form-error" role="alert">No readable Google Calendars were found for this account.</p>}
+      {!loading && error && !calendars.length && <p className="form-error" role="alert">{error}</p>}
+    </section>
+  );
+}
+
 function SettingsScreen({
   data,
   onSave,
   onConnect,
   onDisconnect,
-  onRefresh
+  onRefresh,
+  calendarSelectionOpen,
+  onCalendarSelected
 }: {
   data: BootstrapPayload;
   onSave: (payload: Record<string, unknown>) => void;
   onConnect: (role: Role) => void;
   onDisconnect: (role: Role) => void;
   onRefresh: () => void;
+  calendarSelectionOpen: boolean;
+  onCalendarSelected: (calendarName: string) => Promise<void>;
 }) {
   const settings = data.settings;
   const colors = parseColors(settings.colors);
@@ -785,12 +857,12 @@ function SettingsScreen({
         <p className="muted-copy">Connect Google Calendar for each person. PairNest stores the connection securely in Postgres and merges upcoming Google events with shared app events.</p>
         <div className="form">
           <div className="button-row">
-            <button className="secondary-btn" onClick={() => onConnect("a")} type="button">Connect {settings.partnerAName}</button>
-            <button className="secondary-btn" onClick={() => onConnect("b")} type="button">Connect {settings.partnerBName}</button>
+            <button className="secondary-btn" onClick={() => onConnect("a")} type="button">{data.googleStatus.aConnected ? `Reconnect ${settings.partnerAName}` : `Connect ${settings.partnerAName}`}</button>
+            <button className="secondary-btn" onClick={() => onConnect("b")} type="button">{data.googleStatus.bConnected ? `Reconnect ${settings.partnerBName}` : `Connect ${settings.partnerBName}`}</button>
           </div>
           <div className="button-row">
-            <button className="secondary-btn" onClick={() => onDisconnect("a")} type="button">Disconnect A</button>
-            <button className="secondary-btn" onClick={() => onDisconnect("b")} type="button">Disconnect B</button>
+            <button className="secondary-btn" onClick={() => onDisconnect("a")} type="button">Disconnect {settings.partnerAName}</button>
+            <button className="secondary-btn" onClick={() => onDisconnect("b")} type="button">Disconnect {settings.partnerBName}</button>
           </div>
           <button className="primary-btn fit" onClick={onRefresh} type="button">Refresh my calendar link</button>
           <div className="status-pill-row">
@@ -799,6 +871,8 @@ function SettingsScreen({
           </div>
         </div>
       </section>
+
+      {calendarSelectionOpen && <GoogleCalendarSelector onConnected={onCalendarSelected} />}
 
       <section className="panel">
         <h3>Workspace status</h3>
@@ -1054,10 +1128,26 @@ function WishlistCard({
   onDelete
 }: {
   item: WishlistItem;
-  onSave: (id: string, payload: Record<string, unknown>) => void;
+  onSave: (id: string, payload: Record<string, unknown>) => Promise<boolean>;
   onDelete: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    setSaveError("");
+    const form = new FormData(event.currentTarget);
+    try {
+      const saved = await onSave(item.id, { ...Object.fromEntries(form.entries()), status: item.status });
+      if (saved) setExpanded(false);
+      else setSaveError("Could not save wishlist item. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
   return (
     <article className={`list-card expandable-card ${wishlistAccentClass(item.category)}`}>
       <button className="tile-button" onClick={() => setExpanded((value) => !value)} type="button">
@@ -1077,7 +1167,7 @@ function WishlistCard({
         {item.mapUrl && <a className="inline-link map-link" href={item.mapUrl} target="_blank" rel="noreferrer"><Icons.MapPin size={15} /> Map</a>}
       </div>
       {expanded && (
-        <form className="form edit-form" onSubmit={(event) => handleForm(event, (payload) => onSave(item.id, payload), { status: item.status })}>
+        <form className="form edit-form" onSubmit={submit}>
           <Field label="Title" name="title" required defaultValue={item.title} />
           <Select label="Category" name="category" options={["Travel", "Restaurant", "Gift", "Experience", "General"]} defaultValue={item.category} />
           <Select label="Priority" name="priority" options={["Low", "Medium", "High"]} defaultValue={item.priority} />
@@ -1086,9 +1176,10 @@ function WishlistCard({
           <Field label="Google Maps URL" name="mapUrl" type="url" defaultValue={item.mapUrl} />
           <Textarea label="Note" name="note" defaultValue={item.note} />
           <div className="button-row">
-            <button className="primary-btn" type="submit"><Icons.Save size={16} />Save</button>
-            <button className="secondary-btn" onClick={() => onDelete(item.id)} type="button"><Icons.Trash2 size={16} />Delete</button>
+            <button className="primary-btn" type="submit" disabled={saving}><Icons.Save size={16} />{saving ? "Saving..." : "Save"}</button>
+            <button className="secondary-btn" onClick={() => onDelete(item.id)} type="button" disabled={saving}><Icons.Trash2 size={16} />Delete</button>
           </div>
+          {saveError && <p className="form-error" role="alert">{saveError}</p>}
         </form>
       )}
     </article>
@@ -1101,10 +1192,26 @@ function GoalCard({
   onDelete
 }: {
   item: GoalItem;
-  onSave: (id: string, payload: Record<string, unknown>) => void;
+  onSave: (id: string, payload: Record<string, unknown>) => Promise<boolean>;
   onDelete: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    setSaveError("");
+    const form = new FormData(event.currentTarget);
+    try {
+      const saved = await onSave(item.id, Object.fromEntries(form.entries()));
+      if (saved) setExpanded(false);
+      else setSaveError("Could not save goal. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
   return (
     <article className={`list-card expandable-card ${goalAccentClass(item.type)}`}>
       <button className="tile-button" onClick={() => setExpanded((value) => !value)} type="button">
@@ -1123,7 +1230,7 @@ function GoalCard({
       {item.note && <p>{item.note}</p>}
       {item.mapUrl && <a className="inline-link map-link" href={item.mapUrl} target="_blank" rel="noreferrer"><Icons.MapPin size={15} /> Map</a>}
       {expanded && (
-        <form className="form edit-form" onSubmit={(event) => handleForm(event, (payload) => onSave(item.id, payload))}>
+        <form className="form edit-form" onSubmit={submit}>
           <Field label="Goal title" name="title" required defaultValue={item.title} />
           <Select label="Type" name="type" options={["Travel", "Learning", "Experience", "Finance", "Home", "General"]} defaultValue={item.type} />
           <Field label="Target date" name="targetDate" type="date" defaultValue={item.targetDate} />
@@ -1133,9 +1240,10 @@ function GoalCard({
           <Field label="Google Maps URL" name="mapUrl" type="url" defaultValue={item.mapUrl} />
           <Textarea label="Note" name="note" defaultValue={item.note} />
           <div className="button-row">
-            <button className="primary-btn" type="submit"><Icons.Save size={16} />Save</button>
-            <button className="secondary-btn" onClick={() => onDelete(item.id)} type="button"><Icons.Trash2 size={16} />Delete</button>
+            <button className="primary-btn" type="submit" disabled={saving}><Icons.Save size={16} />{saving ? "Saving..." : "Save"}</button>
+            <button className="secondary-btn" onClick={() => onDelete(item.id)} type="button" disabled={saving}><Icons.Trash2 size={16} />Delete</button>
           </div>
+          {saveError && <p className="form-error" role="alert">{saveError}</p>}
         </form>
       )}
     </article>

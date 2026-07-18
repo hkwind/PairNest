@@ -92,6 +92,15 @@ export const api = {
       body: JSON.stringify({ coupleId, role })
     });
   },
+  getGoogleCalendars() {
+    return request<{ calendars: { id: string; name: string; primary: boolean }[] }>("/api/google/calendars");
+  },
+  selectGoogleCalendar(calendarId: string) {
+    return request<{ ok: boolean; calendarName: string }>("/api/google/calendars", {
+      method: "POST",
+      body: JSON.stringify({ calendarId })
+    });
+  },
   refreshCalendar(coupleId: string) {
     return request<{ ok: boolean; message?: string }>("/api/calendar-links", {
       method: "PUT",

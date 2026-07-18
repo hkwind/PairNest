@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectGoogleCalendar } from "@/lib/repository";
+import { createGoogleCalendarSession } from "@/lib/repository";
 import { exchangeCodeForTokens, parseGoogleState } from "@/lib/google-calendar";
 
 export async function GET(request: NextRequest) {
@@ -11,11 +11,12 @@ export async function GET(request: NextRequest) {
     if (!code) throw new Error(request.nextUrl.searchParams.get("error") || "Missing Google OAuth code.");
 
     const state = parseGoogleState(request.nextUrl.searchParams.get("state"));
+    if (request.cookies.get("pairnest_google_oauth")?.value !== state.nonce) {
+      throw new Error("Google Calendar sign-in session expired. Please try again.");
+    }
     const tokens = await exchangeCodeForTokens(request.nextUrl.origin, code);
 
-    await connectGoogleCalendar(state.coupleId, state.role, {
-      calendarId: "primary",
-      calendarName: "Primary Google Calendar",
+    const sessionId = await createGoogleCalendarSession(state.coupleId, state.role, {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token || "",
       tokenType: tokens.token_type || "Bearer",
@@ -24,7 +25,11 @@ export async function GET(request: NextRequest) {
     });
 
     appUrl.searchParams.set("coupleId", state.coupleId);
-    appUrl.searchParams.set("calendarConnected", state.role);
+    appUrl.searchParams.set("calendarSelect", "1");
+    const response = NextResponse.redirect(appUrl);
+    response.cookies.set("pairnest_google_oauth", "", { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 0, path: "/" });
+    response.cookies.set("pairnest_google_calendar_session", sessionId, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 600, path: "/" });
+    return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Google Calendar connection failed.";
     appUrl.searchParams.set("calendarError", message);

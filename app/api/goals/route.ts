@@ -9,9 +9,13 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const body = await request.json();
-  const coupleId = String(body.coupleId || DEFAULT_WORKSPACE_SLUG);
-  return NextResponse.json(await updateGoal(coupleId, String(body.id || ""), body));
+  try {
+    const body = await request.json();
+    const coupleId = String(body.coupleId || DEFAULT_WORKSPACE_SLUG);
+    return NextResponse.json(await updateGoal(coupleId, String(body.id || ""), body));
+  } catch (error) {
+    return NextResponse.json({ message: error instanceof Error ? error.message : "Could not save goal." }, { status: 400 });
+  }
 }
 
 export async function DELETE(request: NextRequest) {

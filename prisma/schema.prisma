@@ -46,6 +46,7 @@ model Workspace {
   events              Event[]
   memories            MemoryEntry[]
   calendarConnections CalendarConnection[]
+  calendarOAuthSessions CalendarOAuthSession[]
   calendarCache       CalendarCache[]
 }
 
@@ -155,6 +156,22 @@ model CalendarConnection {
   workspace     Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, role, active])
+}
+
+model CalendarOAuthSession {
+  id           String      @id
+  workspaceId  String
+  role         PartnerRole
+  accessToken  String
+  refreshToken String?
+  tokenType    String?
+  scope        String?
+  expiresAt    DateTime?
+  createdAt    DateTime    @default(now())
+  expiresOn    DateTime
+  workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, expiresOn])
 }
 
 model CalendarCache {
