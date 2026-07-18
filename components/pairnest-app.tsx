@@ -17,7 +17,7 @@ import type {
 import { Icons } from "@/components/icons";
 
 type Screen = "home" | "wishlist" | "goals" | "calendar" | "memories" | "settings";
-type Modal = "wishlist" | "goal" | "event" | null;
+type Modal = "wishlist" | "goal" | "event" | "event-edit" | null;
 type CalendarView = "month" | "week" | "agenda";
 type SortMode = "newest" | "oldest" | "priority" | "progress";
 
@@ -35,6 +35,7 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
   const [data, setData] = useState<BootstrapPayload | null>(null);
   const [screen, setScreen] = useState<Screen>("home");
   const [modal, setModal] = useState<Modal>(null);
+  const [editingEvent, setEditingEvent] = useState<CustomEventItem | null>(null);
   const [calendarView, setCalendarView] = useState<CalendarView>("month");
   const [wishlistFilter, setWishlistFilter] = useState("All");
   const [goalFilter, setGoalFilter] = useState("All");
@@ -250,6 +251,12 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
                     }));
                     void mutate(() => api.removeEvent(coupleId, id), () => setData(previous));
                   }}
+                  onEdit={(event) => {
+                    const customEvent = data.customEvents.find((item) => item.id === event.id);
+                    if (!customEvent) return;
+                    setEditingEvent(customEvent);
+                    setModal("event-edit");
+                  }}
                   onRefresh={() =>
                     mutate(async () => {
                       showToast("Refreshing Google Calendar...");
@@ -399,6 +406,25 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
               setModal(null);
               setScreen("calendar");
               showToast("Shared event added");
+            })
+          }
+        />
+      )}
+      {data && modal === "event-edit" && editingEvent && (
+        <EventModal
+          event={editingEvent}
+          onClose={() => { setEditingEvent(null); setModal(null); }}
+          onSubmit={(payload) =>
+            mutate(async () => {
+              const item = await api.updateEvent(coupleId, editingEvent.id, payload);
+              updateData((current) => ({
+                ...current,
+                customEvents: current.customEvents.map((event) => event.id === item.id ? item : event),
+                mergedEvents: current.mergedEvents.map((event) => event.kind === "app" && event.id === item.id ? toMergedEvent(item, current) : event)
+              }));
+              setEditingEvent(null);
+              setModal(null);
+              showToast("Event updated");
             })
           }
         />
@@ -568,6 +594,7 @@ function CalendarScreen({
   onView,
   onAdd,
   onDelete,
+  onEdit,
   onRefresh
 }: {
   events: MergedEvent[];
@@ -575,6 +602,7 @@ function CalendarScreen({
   onView: (view: CalendarView) => void;
   onAdd: () => void;
   onDelete: (id: string) => void;
+  onEdit: (event: MergedEvent) => void;
   onRefresh: () => void;
 }) {
   const upcoming = getUpcoming(events);
@@ -598,11 +626,11 @@ function CalendarScreen({
         </div>
         {view === "month" && <MonthCalendar events={events} />}
         {view === "week" && <WeekCalendar events={events} />}
-        {view === "agenda" && <EventList events={upcoming} onDelete={onDelete} />}
+        {view === "agenda" && <EventList events={upcoming} onDelete={onDelete} onEdit={onEdit} />}
       </section>
       <section className="panel calendar-upcoming-panel">
         <PanelTitle title="Upcoming calendar items" action="Refresh my calendar" onAction={onRefresh} />
-        <EventList events={upcoming} onDelete={onDelete} />
+        <EventList events={upcoming} onDelete={onDelete} onEdit={onEdit} />
       </section>
     </section>
   );
@@ -934,17 +962,19 @@ function GoalModal(props: {
 function EventModal(props: {
   onClose: () => void;
   onSubmit: (payload: Record<string, unknown>) => void;
+  event?: CustomEventItem;
 }) {
+  const editing = Boolean(props.event);
   return (
-    <ModalShell title="Add shared event" description="This saves an app event and marks sync status for linked calendars." onClose={props.onClose}>
+    <ModalShell title={editing ? "Edit event" : "Add shared event"} description="PairNest events sync to the connected calendar for their selected scope." onClose={props.onClose}>
       <form className="form" onSubmit={(event) => handleForm(event, props.onSubmit)}>
-        <Field label="Event title" name="title" required placeholder="Friday dinner hold" />
-        <Field label="Start" name="start" type="datetime-local" required />
-        <Field label="End" name="end" type="datetime-local" />
-        <Select label="Scope" name="source" options={["shared", "a", "b"]} labels={["Shared", "Partner A side", "Partner B side"]} />
-        <Field label="Google Maps URL" name="mapUrl" type="url" placeholder="https://maps.google.com/..." />
-        <Textarea label="Note" name="note" placeholder="Reservation, location, or reminder" />
-        <ModalActions onClose={props.onClose} submitLabel="Add event" />
+        <Field label="Event title" name="title" required placeholder="Friday dinner hold" defaultValue={props.event?.title} />
+        <Field label="Start" name="start" type="datetime-local" required defaultValue={toDateTimeLocal(props.event?.start)} />
+        <Field label="End" name="end" type="datetime-local" defaultValue={toDateTimeLocal(props.event?.end)} />
+        <Select label="Scope" name="source" options={["shared", "a", "b"]} labels={["Shared", "Partner A side", "Partner B side"]} defaultValue={props.event?.source} />
+        <Field label="Google Maps URL" name="mapUrl" type="url" placeholder="https://maps.google.com/..." defaultValue={props.event?.mapUrl} />
+        <Textarea label="Note" name="note" placeholder="Reservation, location, or reminder" defaultValue={props.event?.note} />
+        <ModalActions onClose={props.onClose} submitLabel={editing ? "Save event" : "Add event"} />
       </form>
     </ModalShell>
   );
@@ -957,7 +987,14 @@ function handleForm(
 ) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
-  onSubmit({ ...Object.fromEntries(form.entries()), ...extra });
+  const payload = { ...Object.fromEntries(form.entries()), ...extra } as Record<string, unknown>;
+  for (const key of ["start", "end", "eventStart"]) {
+    if (typeof payload[key] === "string" && payload[key]) {
+      const date = new Date(payload[key] as string);
+      if (!Number.isNaN(date.getTime())) payload[key] = date.toISOString();
+    }
+  }
+  onSubmit(payload);
 }
 
 function ModalShell(props: { title: string; description: string; children: ReactNode; onClose: () => void }) {
@@ -1296,16 +1333,16 @@ function WeekCalendar({ events }: { events: MergedEvent[] }) {
   );
 }
 
-function EventList({ events, compact, onDelete }: { events: MergedEvent[]; compact?: boolean; onDelete?: (id: string) => void }) {
+function EventList({ events, compact, onDelete, onEdit }: { events: MergedEvent[]; compact?: boolean; onDelete?: (id: string) => void; onEdit?: (event: MergedEvent) => void }) {
   if (!events.length) return <Empty text="No upcoming calendar items yet." />;
   return (
     <div className={compact ? "list compact" : "list"}>
-      {events.map((event) => <EventRow event={event} key={event.id} onDelete={onDelete} />)}
+      {events.map((event) => <EventRow event={event} key={event.id} onDelete={onDelete} onEdit={onEdit} />)}
     </div>
   );
 }
 
-function EventRow({ event, onDelete }: { event: MergedEvent; onDelete?: (id: string) => void }) {
+function EventRow({ event, onDelete, onEdit }: { event: MergedEvent; onDelete?: (id: string) => void; onEdit?: (event: MergedEvent) => void }) {
   return (
     <article className="event-row">
       <span className={`source-line source-${event.source}`} />
@@ -1315,6 +1352,7 @@ function EventRow({ event, onDelete }: { event: MergedEvent; onDelete?: (id: str
       </div>
       <span className={`event-kind-badge kind-${event.kind}`}>{event.kind === "app" ? "Shared" : event.kind === "anniversary" ? "Milestone" : "Calendar"}</span>
       {event.mapUrl && <a className="icon-btn" href={event.mapUrl} target="_blank" rel="noreferrer" aria-label="Open map"><Icons.MapPin size={16} /></a>}
+      {onEdit && event.kind === "app" && <button className="icon-btn" onClick={() => onEdit(event)} type="button" aria-label="Edit event"><Icons.Edit3 size={16} /></button>}
       {onDelete && event.kind === "app" && <DeleteButton onClick={() => onDelete(event.id)} />}
     </article>
   );
@@ -1463,6 +1501,14 @@ function getAnniversaryText(data: BootstrapPayload) {
 function sameDate(value: string, date: Date) {
   const next = new Date(value);
   return next.getFullYear() === date.getFullYear() && next.getMonth() === date.getMonth() && next.getDate() === date.getDate();
+}
+
+function toDateTimeLocal(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
 function formatSmartDate(value: string) {

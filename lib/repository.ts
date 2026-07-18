@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { clampNumber, DEFAULT_COLORS, parseAnniversaryConfig, parseColors } from "@/lib/defaults";
 import { parseDateInput, parseDateOnly, toIso } from "@/lib/dates";
 import { generateAnniversaryEvents } from "@/lib/anniversary";
-import { fetchGoogleEvents } from "@/lib/google-calendar";
+import { fetchGoogleEvents, removeGoogleEvent, upsertGoogleEvent } from "@/lib/google-calendar";
 import type {
   BootstrapPayload,
   CustomEventItem,
@@ -83,7 +83,7 @@ export async function bootstrapWorkspace(slug: string): Promise<BootstrapPayload
         where: { workspaceId: workspace.id, deletedAt: null },
         orderBy: { start: "asc" },
         select: {
-          id: true, title: true, start: true, end: true, source: true, note: true,
+          id: true, title: true, start: true, end: true, source: true, note: true, mapUrl: true,
           aCalendarEventId: true, bCalendarEventId: true, aSyncStatus: true,
           bSyncStatus: true, deletedAt: true, createdAt: true, updatedAt: true
         }
@@ -273,9 +273,6 @@ export async function removeGoal(slug: string, id: string) {
 
 export async function addEvent(slug: string, payload: Record<string, unknown>) {
   const workspace = await ensureWorkspace(slug);
-  const connections = await prisma.calendarConnection.findMany({
-    where: { workspaceId: workspace.id, active: true }
-  });
   const start = parseDateInput(payload.start);
   if (!start) throw new Error("start is required");
   const item = await prisma.event.create({
@@ -287,11 +284,31 @@ export async function addEvent(slug: string, payload: Record<string, unknown>) {
       source: toPrismaSource(payload.source),
       note: optional(payload.note),
       mapUrl: optional(payload.mapUrl),
-      aSyncStatus: connections.some((link) => link.role === "A") ? "pending" : "not_connected",
-      bSyncStatus: connections.some((link) => link.role === "B") ? "pending" : "not_connected"
+      aSyncStatus: "not_connected",
+      bSyncStatus: "not_connected"
     }
   });
-  return serializeCustomEvent(item);
+  return serializeCustomEvent(await syncPairNestEvent(workspace.id, item));
+}
+
+export async function updateEvent(slug: string, id: string, payload: Record<string, unknown>) {
+  const workspace = await ensureWorkspace(slug);
+  const existing = await prisma.event.findFirst({ where: { id, workspaceId: workspace.id, deletedAt: null } });
+  if (!existing) throw new Error("Event was not found in this workspace.");
+  const start = parseDateInput(payload.start);
+  if (!start) throw new Error("start is required");
+  const item = await prisma.event.update({
+    where: { id: existing.id },
+    data: {
+      title: required(payload.title, "title"),
+      start,
+      end: parseDateInput(payload.end),
+      source: toPrismaSource(payload.source),
+      note: optional(payload.note),
+      mapUrl: optional(payload.mapUrl)
+    }
+  });
+  return serializeCustomEvent(await syncPairNestEvent(workspace.id, item));
 }
 
 export async function saveMemory(slug: string, payload: Record<string, unknown>) {
@@ -329,11 +346,55 @@ export async function saveMemory(slug: string, payload: Record<string, unknown>)
 
 export async function removeEvent(slug: string, id: string) {
   const workspace = await ensureWorkspace(slug);
+  const existing = await prisma.event.findFirst({ where: { id, workspaceId: workspace.id, deletedAt: null } });
+  if (!existing) return { ok: false };
+  const connections = await prisma.calendarConnection.findMany({ where: { workspaceId: workspace.id, active: true, provider: "google" } });
+  await Promise.allSettled(connections.map((connection) => {
+    const externalEventId = connection.role === "A" ? existing.aCalendarEventId : existing.bCalendarEventId;
+    return removeGoogleEvent(connection, externalEventId || "");
+  }));
   const result = await prisma.event.updateMany({
     where: { id, workspaceId: workspace.id, deletedAt: null },
     data: { deletedAt: new Date() }
   });
   return { ok: result.count > 0 };
+}
+
+async function syncPairNestEvent(workspaceId: string, event: Prisma.EventGetPayload<object>) {
+  const connections = await prisma.calendarConnection.findMany({ where: { workspaceId, active: true, provider: "google" } });
+  let aCalendarEventId = event.aCalendarEventId;
+  let bCalendarEventId = event.bCalendarEventId;
+  let aSyncStatus = "not_connected";
+  let bSyncStatus = "not_connected";
+
+  for (const connection of connections) {
+    const shouldSync = event.source === "SHARED" || event.source === connection.role;
+    if (!shouldSync) continue;
+    try {
+      const externalEventId = await upsertGoogleEvent(connection, {
+        externalEventId: connection.role === "A" ? aCalendarEventId : bCalendarEventId,
+        title: event.title,
+        start: event.start,
+        end: event.end,
+        note: event.note
+      });
+      if (connection.role === "A") {
+        aCalendarEventId = externalEventId;
+        aSyncStatus = "synced";
+      } else {
+        bCalendarEventId = externalEventId;
+        bSyncStatus = "synced";
+      }
+    } catch {
+      if (connection.role === "A") aSyncStatus = "reconnect_required";
+      else bSyncStatus = "reconnect_required";
+    }
+  }
+
+  return prisma.event.update({
+    where: { id: event.id },
+    data: { aCalendarEventId, bCalendarEventId, aSyncStatus, bSyncStatus }
+  });
 }
 
 export async function connectCalendar(slug: string, role: Role, calendarId: string) {

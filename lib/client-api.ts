@@ -74,6 +74,12 @@ export const api = {
       body: JSON.stringify({ coupleId, ...payload })
     });
   },
+  updateEvent(coupleId: string, id: string, payload: Record<string, unknown>) {
+    return request<CustomEventItem>("/api/events", {
+      method: "PUT",
+      body: JSON.stringify({ coupleId, id, ...payload })
+    });
+  },
   removeEvent(coupleId: string, id: string) {
     return request<{ ok: boolean }>("/api/events", {
       method: "DELETE",

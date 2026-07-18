@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_CALENDAR_API = "https://www.googleapis.com/calendar/v3";
-const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
+const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar";
 
 export type GoogleOAuthState = {
   coupleId: string;
@@ -183,6 +183,44 @@ export async function fetchGoogleEvents(connection: CalendarConnection) {
   if (!response.ok) throw new Error(await readGoogleError(response, "Could not refresh Google Calendar events."));
   const data = (await response.json()) as GoogleEventsResponse;
   return (data.items || []).flatMap((event) => normalizeGoogleEvent(event, connection.role));
+}
+
+export async function upsertGoogleEvent(
+  connection: CalendarConnection,
+  event: { externalEventId?: string | null; title: string; start: Date; end: Date | null; note: string | null }
+) {
+  const accessToken = await refreshAccessToken(connection);
+  const calendarId = encodeURIComponent(connection.calendarId || "primary");
+  const body = {
+    summary: event.title,
+    description: event.note || "",
+    start: { dateTime: event.start.toISOString() },
+    end: { dateTime: (event.end || new Date(event.start.getTime() + 60 * 60 * 1000)).toISOString() }
+  };
+  const isUpdate = Boolean(event.externalEventId);
+  const url = isUpdate
+    ? `${GOOGLE_CALENDAR_API}/calendars/${calendarId}/events/${encodeURIComponent(event.externalEventId || "")}`
+    : `${GOOGLE_CALENDAR_API}/calendars/${calendarId}/events`;
+  const response = await fetch(url, {
+    method: isUpdate ? "PUT" : "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) throw new Error(await readGoogleError(response, "Could not sync this PairNest event to Google Calendar."));
+  return (await response.json() as { id?: string }).id || "";
+}
+
+export async function removeGoogleEvent(connection: CalendarConnection, externalEventId: string) {
+  if (!externalEventId) return;
+  const accessToken = await refreshAccessToken(connection);
+  const calendarId = encodeURIComponent(connection.calendarId || "primary");
+  const response = await fetch(`${GOOGLE_CALENDAR_API}/calendars/${calendarId}/events/${encodeURIComponent(externalEventId)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  if (!response.ok && response.status !== 404) {
+    throw new Error(await readGoogleError(response, "Could not remove this PairNest event from Google Calendar."));
+  }
 }
 
 function normalizeGoogleEvent(event: GoogleEvent, role: PartnerRole) {
