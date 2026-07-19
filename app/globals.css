@@ -1114,7 +1114,8 @@ a {
 .memory-compact-photo {
   width: 100%;
   aspect-ratio: 4 / 3;
-  object-fit: cover;
+  background: var(--surface-2);
+  object-fit: contain;
   border-radius: 8px;
 }
 
@@ -1147,14 +1148,15 @@ a {
   overflow: hidden;
   border-radius: 14px;
   background: var(--surface-2);
-  aspect-ratio: 1 / 1;
 }
 
 .memory-photo-grid img {
   width: 100%;
-  height: 100%;
+  height: auto;
+  max-height: 420px;
   display: block;
-  object-fit: cover;
+  background: var(--surface-2);
+  object-fit: contain;
 }
 
 .photo-remove {
