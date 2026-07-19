@@ -1221,6 +1221,65 @@ textarea {
   color: #ffffff;
 }
 
+.nav-icon-wrap,
+.notification-button {
+  position: relative;
+}
+
+.nav-icon-wrap {
+  display: inline-grid;
+}
+
+.notification-dot {
+  position: absolute;
+  top: -5px;
+  right: -7px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: #e53935;
+}
+
+.notification-button .notification-dot {
+  top: -5px;
+  right: -5px;
+}
+
+.completion-filter {
+  width: fit-content;
+  margin: 0 0 14px;
+}
+
+.completed-card {
+  opacity: 0.72;
+}
+
+.completed-card h3 {
+  text-decoration: line-through;
+}
+
+.completion-action {
+  margin-top: 10px;
+}
+
+.screen-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 16px;
+}
+
+.sync-warning {
+  min-height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff1f0;
+  color: #b42318;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 0 12px;
+}
+
 .fab {
   position: fixed;
   right: 16px;

@@ -50,6 +50,9 @@ export const api = {
       body: JSON.stringify({ coupleId, id })
     });
   },
+  setWishlistStatus(coupleId: string, id: string, status: "Done" | "Saved") {
+    return request<WishlistItem>("/api/wishlist", { method: "PATCH", body: JSON.stringify({ coupleId, id, status }) });
+  },
   addGoal(coupleId: string, payload: Record<string, unknown>) {
     return request<GoalItem>("/api/goals", {
       method: "POST",
@@ -67,6 +70,9 @@ export const api = {
       method: "DELETE",
       body: JSON.stringify({ coupleId, id })
     });
+  },
+  setGoalStatus(coupleId: string, id: string, status: "Done" | "Planned") {
+    return request<GoalItem>("/api/goals", { method: "PATCH", body: JSON.stringify({ coupleId, id, status }) });
   },
   addEvent(coupleId: string, payload: Record<string, unknown>) {
     return request<CustomEventItem>("/api/events", {

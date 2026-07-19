@@ -106,9 +106,11 @@ export type BootstrapPayload = {
   googleStatus: GoogleStatus;
   mergedEvents: MergedEvent[];
   memories: MemoryEntry[];
+  recordedMemoryEventKeys: string[];
   syncResult: null;
   refreshResult: null;
   syncError: string;
+  calendarSync: { refreshing: boolean; lastError: string; lastCompletedAt: string };
 };
 
 export type ParsedColors = {

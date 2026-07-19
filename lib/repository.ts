@@ -61,7 +61,7 @@ export async function ensureWorkspace(slug: string) {
 
 export async function bootstrapWorkspace(slug: string): Promise<BootstrapPayload> {
   const workspace = await ensureWorkspace(slug);
-  const [wishlist, goals, customEvents, calendarConnections, calendarCache, memories] =
+  const [wishlist, goals, customEvents, calendarConnections, calendarCache, memories, calendarSyncState] =
     await Promise.all([
       prisma.wishlistItem.findMany({
         where: { workspaceId: workspace.id },
@@ -100,7 +100,8 @@ export async function bootstrapWorkspace(slug: string): Promise<BootstrapPayload
         where: { workspaceId: workspace.id },
         orderBy: { start: "asc" }
       }),
-      findMemoriesSafely(workspace.id)
+      findMemoriesSafely(workspace.id),
+      prisma.calendarSyncState.findUnique({ where: { workspaceId: workspace.id } }).catch(() => null)
     ]);
 
   const settings = serializeSettings(workspace);
@@ -125,6 +126,7 @@ export async function bootstrapWorkspace(slug: string): Promise<BootstrapPayload
     }))
   );
 
+  const validMemories = memories.filter(hasMemoryContent);
   return {
     ok: true,
     appVersion: APP_VERSION,
@@ -134,10 +136,16 @@ export async function bootstrapWorkspace(slug: string): Promise<BootstrapPayload
     settings,
     googleStatus,
     mergedEvents,
-    memories: memories.map(serializeMemory),
+    memories: validMemories.slice(0, 5).map(serializeMemory),
+    recordedMemoryEventKeys: validMemories.map((memory) => memory.eventKey),
     syncResult: null,
     refreshResult: null,
-    syncError: ""
+    syncError: calendarSyncState?.lastError || "",
+    calendarSync: {
+      refreshing: Boolean(calendarSyncState?.runningUntil && calendarSyncState.runningUntil > new Date()),
+      lastError: calendarSyncState?.lastError || "",
+      lastCompletedAt: toIso(calendarSyncState?.lastCompletedAt)
+    }
   };
 }
 
@@ -226,6 +234,13 @@ export async function removeWishlist(slug: string, id: string) {
   return { ok: result.count > 0 };
 }
 
+export async function setWishlistStatus(slug: string, id: string, status: string) {
+  const workspace = await ensureWorkspace(slug);
+  const existing = await prisma.wishlistItem.findFirst({ where: { id, workspaceId: workspace.id } });
+  if (!existing) throw new Error("Wishlist item was not found in this workspace.");
+  return serializeWishlist(await prisma.wishlistItem.update({ where: { id: existing.id }, data: { status } }));
+}
+
 export async function addGoal(slug: string, payload: Record<string, unknown>) {
   const workspace = await ensureWorkspace(slug);
   const item = await prisma.goal.create({
@@ -271,6 +286,13 @@ export async function removeGoal(slug: string, id: string) {
   return { ok: result.count > 0 };
 }
 
+export async function setGoalStatus(slug: string, id: string, status: string) {
+  const workspace = await ensureWorkspace(slug);
+  const existing = await prisma.goal.findFirst({ where: { id, workspaceId: workspace.id } });
+  if (!existing) throw new Error("Goal was not found in this workspace.");
+  return serializeGoal(await prisma.goal.update({ where: { id: existing.id }, data: { status } }));
+}
+
 export async function addEvent(slug: string, payload: Record<string, unknown>) {
   const workspace = await ensureWorkspace(slug);
   const start = parseDateInput(payload.start);
@@ -288,7 +310,7 @@ export async function addEvent(slug: string, payload: Record<string, unknown>) {
       bSyncStatus: "not_connected"
     }
   });
-  return serializeCustomEvent(await syncPairNestEvent(workspace.id, item));
+  return serializeCustomEvent(item);
 }
 
 export async function updateEvent(slug: string, id: string, payload: Record<string, unknown>) {
@@ -308,7 +330,14 @@ export async function updateEvent(slug: string, id: string, payload: Record<stri
       mapUrl: optional(payload.mapUrl)
     }
   });
-  return serializeCustomEvent(await syncPairNestEvent(workspace.id, item));
+  return serializeCustomEvent(item);
+}
+
+export async function syncPairNestEventById(slug: string, id: string) {
+  const workspace = await ensureWorkspace(slug);
+  const event = await prisma.event.findFirst({ where: { id, workspaceId: workspace.id, deletedAt: null } });
+  if (!event) return;
+  await syncPairNestEvent(workspace.id, event);
 }
 
 export async function saveMemory(slug: string, payload: Record<string, unknown>) {
@@ -558,11 +587,25 @@ export async function refreshCalendar(slug: string) {
 }
 
 async function refreshCalendarForWorkspace(workspaceId: string) {
+  const now = new Date();
+  await prisma.calendarSyncState.upsert({
+    where: { workspaceId },
+    update: {},
+    create: { workspaceId }
+  });
+  const claimed = await prisma.calendarSyncState.updateMany({
+    where: { workspaceId, OR: [{ runningUntil: null }, { runningUntil: { lt: now } }] },
+    data: { runningUntil: new Date(now.getTime() + 2 * 60 * 1000), lastError: null }
+  });
+  if (!claimed.count) return { ok: true, message: "Calendar refresh already in progress." };
+
+  try {
   const connections = await prisma.calendarConnection.findMany({
     where: { workspaceId, active: true, provider: "google" }
   });
 
   if (!connections.length) {
+    await prisma.calendarSyncState.update({ where: { workspaceId }, data: { runningUntil: null, lastCompletedAt: new Date() } });
     return { ok: true, message: "Connect Google Calendar first, then refresh." };
   }
 
@@ -615,10 +658,16 @@ async function refreshCalendarForWorkspace(workspaceId: string) {
     ]);
   }
 
+  await prisma.calendarSyncState.update({ where: { workspaceId }, data: { runningUntil: null, lastCompletedAt: new Date(), lastError: null } });
   return {
     ok: true,
     message: `Google Calendar refreshed (${importedCount} events).`
   };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Google Calendar refresh failed.";
+    await prisma.calendarSyncState.update({ where: { workspaceId }, data: { runningUntil: null, lastError: message } });
+    throw error;
+  }
 }
 
 function serializeSettings(
@@ -677,6 +726,10 @@ async function findMemoriesSafely(workspaceId: string) {
     if (code === "P2021" || code === "P2022") return [];
     throw error;
   }
+}
+
+function hasMemoryContent(item: { thoughts: string | null; photoDataUrls: string[] }) {
+  return Boolean(item.thoughts?.trim() || item.photoDataUrls.length);
 }
 
 function serializeWishlist(item: Pick<Prisma.WishlistItemGetPayload<object>, "id" | "title" | "category" | "link" | "note" | "addedBy" | "priority" | "status" | "createdAt" | "updatedAt"> & { mapUrl?: string | null }): WishlistItem {

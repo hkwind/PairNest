@@ -21,7 +21,8 @@ export async function GET() {
       const [tableName, columnName] = entry.split(".");
       return !hasColumn(tableName, columnName);
     });
-    const missingTables = tableNames.has("MemoryEntry") ? [] : ["MemoryEntry"];
+    const requiredTables = ["MemoryEntry", "CalendarOAuthSession", "CalendarSyncState"];
+    const missingTables = requiredTables.filter((tableName) => !tableNames.has(tableName));
     const recentMigrations = await prisma.$queryRaw<Array<{ migration_name: string; finished_at: Date | null }>>`
       SELECT migration_name, finished_at
       FROM "_prisma_migrations"

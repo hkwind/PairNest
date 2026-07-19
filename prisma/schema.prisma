@@ -47,6 +47,7 @@ model Workspace {
   memories            MemoryEntry[]
   calendarConnections CalendarConnection[]
   calendarOAuthSessions CalendarOAuthSession[]
+  calendarSyncState   CalendarSyncState?
   calendarCache       CalendarCache[]
 }
 
@@ -172,6 +173,15 @@ model CalendarOAuthSession {
   workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, expiresOn])
+}
+
+model CalendarSyncState {
+  workspaceId     String    @id
+  runningUntil    DateTime?
+  lastError       String?
+  lastCompletedAt DateTime?
+  updatedAt       DateTime  @updatedAt
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
 
 model CalendarCache {

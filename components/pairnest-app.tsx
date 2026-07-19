@@ -4,6 +4,7 @@ import type { CSSProperties, ChangeEvent, FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/client-api";
 import { parseAnniversaryConfig, parseColors } from "@/lib/defaults";
+import { isEligibleSharedEvent, isFutureUnfinishedEvent, uniqueEvents, validMemory } from "@/lib/event-rules";
 import type {
   BootstrapPayload,
   CustomEventItem,
@@ -41,6 +42,9 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
   const [goalFilter, setGoalFilter] = useState("All");
   const [wishlistSort, setWishlistSort] = useState<SortMode>("newest");
   const [goalSort, setGoalSort] = useState<SortMode>("newest");
+  const [wishlistStatusFilter, setWishlistStatusFilter] = useState<"Active" | "Done" | "All">("Active");
+  const [goalStatusFilter, setGoalStatusFilter] = useState<"Active" | "Done" | "All">("Active");
+  const [seenMemoryEventKeys, setSeenMemoryEventKeys] = useState<string[]>([]);
   const [busy, setBusy] = useState("Loading workspace...");
   const [loadError, setLoadError] = useState("");
   const [toast, setToast] = useState("");
@@ -62,6 +66,8 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
 
   useEffect(() => {
     void loadAll();
+    const refreshAfterBackgroundSync = window.setTimeout(() => void loadAll(true), 3500);
+    return () => window.clearTimeout(refreshAfterBackgroundSync);
   }, [loadAll]);
 
   useEffect(() => {
@@ -94,9 +100,18 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
   const colors = parseColors(settings?.colors);
   const partnerAName = settings?.partnerAName || "Alex";
   const partnerBName = settings?.partnerBName || "Jamie";
-  const upcoming = useMemo(() => getUpcoming(data?.mergedEvents || []), [data]);
-  const avgProgress = data?.bucket.length
-    ? Math.round(data.bucket.reduce((sum, item) => sum + item.progress, 0) / data.bucket.length)
+  const partnerNames = [partnerAName, partnerBName];
+  const eligibleEvents = useMemo(() => uniqueEvents((data?.mergedEvents || []).filter((event) => isEligibleSharedEvent(event, partnerNames))), [data, partnerAName, partnerBName]);
+  const upcoming = useMemo(() => eligibleEvents.filter((event) => isFutureUnfinishedEvent(event)), [eligibleEvents]);
+  const eligiblePastEvents = useMemo(() => eligibleEvents.filter((event) => !isFutureUnfinishedEvent(event)), [eligibleEvents]);
+  const unrecordedMemoryKeys = useMemo(() => new Set(eligiblePastEvents
+    .filter((event) => !data?.recordedMemoryEventKeys.includes(eventKey(event)))
+    .map(eventKey)), [data?.memories, eligiblePastEvents]);
+  const hasUnseenMemoryPrompt = Array.from(unrecordedMemoryKeys).some((key) => !seenMemoryEventKeys.includes(key));
+  const activeWishlistCount = data?.wishlist.filter((item) => !isCompleted(item.status)).length || 0;
+  const activeGoals = data?.bucket.filter((item) => !isCompleted(item.status)) || [];
+  const avgProgress = activeGoals.length
+    ? Math.round(activeGoals.reduce((sum, item) => sum + item.progress, 0) / activeGoals.length)
     : 0;
 
   function showToast(message: string) {
@@ -119,6 +134,24 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
     setData((current) => (current ? updater(current) : current));
   }
 
+  function openScreen(nextScreen: Screen) {
+    if (nextScreen === "memories") {
+      const nextSeen = Array.from(new Set([...seenMemoryEventKeys, ...unrecordedMemoryKeys]));
+      setSeenMemoryEventKeys(nextSeen);
+      localStorage.setItem(`pairnest:memory-seen:${coupleId}`, JSON.stringify(nextSeen));
+    }
+    setScreen(nextScreen);
+  }
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(`pairnest:memory-seen:${coupleId}`) || "[]");
+      setSeenMemoryEventKeys(Array.isArray(stored) ? stored.filter((key): key is string => typeof key === "string") : []);
+    } catch {
+      setSeenMemoryEventKeys([]);
+    }
+  }, [coupleId]);
+
   function connectGoogle(role: Role) {
     window.location.href = `/api/google/start?coupleId=${encodeURIComponent(coupleId)}&role=${role}`;
   }
@@ -138,10 +171,10 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
             <button
               className={itemScreen === screen ? "nav-item active" : "nav-item"}
               key={itemScreen}
-              onClick={() => setScreen(itemScreen)}
+              onClick={() => openScreen(itemScreen)}
               type="button"
             >
-              <Icon size={20} />
+              <span className="nav-icon-wrap"><Icon size={20} />{itemScreen === "memories" && hasUnseenMemoryPrompt && <span className="notification-dot" />}</span>
               <span>{label}</span>
             </button>
           ))}
@@ -151,6 +184,7 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
       <div className="app-main">
         <header className="topbar">
           <Brand title={settings?.workspaceName || "PairNest"} subtitle={subtitle(screen)} />
+          {data?.calendarSync.lastError && <button className="sync-warning" onClick={() => openScreen("settings")} type="button">Calendar sync needs retry</button>}
           <button className="icon-btn" onClick={() => loadAll()} type="button" aria-label="Refresh">
             <Icons.RefreshCw size={20} />
           </button>
@@ -177,7 +211,9 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
                   data={data}
                   upcoming={upcoming}
                   avgProgress={avgProgress}
-                  onGo={setScreen}
+                  activeWishlistCount={activeWishlistCount}
+                  activeGoalCount={activeGoals.length}
+                  onGo={openScreen}
                 />
               )}
               {screen === "wishlist" && (
@@ -187,6 +223,8 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
                   sort={wishlistSort}
                   onFilter={setWishlistFilter}
                   onSort={setWishlistSort}
+                  statusFilter={wishlistStatusFilter}
+                  onStatusFilter={setWishlistStatusFilter}
                   onAdd={() => setModal("wishlist")}
                   onSave={(id, payload) =>
                     mutate(async () => {
@@ -206,6 +244,11 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
                     }));
                     void mutate(() => api.removeWishlist(coupleId, id), () => setData(previous));
                   }}
+                  onStatusChange={(id, status) => mutate(async () => {
+                    const item = await api.setWishlistStatus(coupleId, id, status);
+                    updateData((current) => ({ ...current, wishlist: current.wishlist.map((entry) => entry.id === id ? item : entry) }));
+                    showToast(status === "Done" ? "Wishlist item completed" : "Wishlist item reactivated");
+                  })}
                 />
               )}
               {screen === "goals" && (
@@ -215,6 +258,8 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
                   sort={goalSort}
                   onFilter={setGoalFilter}
                   onSort={setGoalSort}
+                  statusFilter={goalStatusFilter}
+                  onStatusFilter={setGoalStatusFilter}
                   onAdd={() => setModal("goal")}
                   onSave={(id, payload) =>
                     mutate(async () => {
@@ -234,6 +279,11 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
                     }));
                     void mutate(() => api.removeGoal(coupleId, id), () => setData(previous));
                   }}
+                  onStatusChange={(id, status) => mutate(async () => {
+                    const item = await api.setGoalStatus(coupleId, id, status);
+                    updateData((current) => ({ ...current, bucket: current.bucket.map((entry) => entry.id === id ? item : entry) }));
+                    showToast(status === "Done" ? "Goal completed" : "Goal reactivated");
+                  })}
                 />
               )}
               {screen === "calendar" && (
@@ -269,14 +319,20 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
               )}
               {screen === "memories" && (
                 <MemoriesScreen
-                  events={data.mergedEvents}
+                  events={eligiblePastEvents}
                   memories={data.memories}
+                  hasUnseenPrompt={hasUnseenMemoryPrompt}
                   onSave={(payload) =>
                     mutate(async () => {
                       const memory = await api.saveMemory(coupleId, payload);
                       updateData((current) => ({
                         ...current,
-                        memories: upsertMemory(current.memories, memory)
+                        memories: validMemory(memory.thoughts, memory.photoDataUrls)
+                          ? upsertMemory(current.memories, memory).sort((a, b) => new Date(b.eventStart).getTime() - new Date(a.eventStart).getTime()).slice(0, 5)
+                          : current.memories.filter((entry) => entry.eventKey !== memory.eventKey),
+                        recordedMemoryEventKeys: validMemory(memory.thoughts, memory.photoDataUrls)
+                          ? Array.from(new Set([...current.recordedMemoryEventKeys, memory.eventKey]))
+                          : current.recordedMemoryEventKeys.filter((key) => key !== memory.eventKey)
                       }));
                       showToast("Memory saved");
                     })
@@ -347,10 +403,10 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
             <button
               className={itemScreen === screen ? "bottom-nav-btn active" : "bottom-nav-btn"}
               key={itemScreen}
-              onClick={() => setScreen(itemScreen)}
+              onClick={() => openScreen(itemScreen)}
               type="button"
             >
-              <Icon size={20} />
+              <span className="nav-icon-wrap"><Icon size={20} />{itemScreen === "memories" && hasUnseenMemoryPrompt && <span className="notification-dot" />}</span>
               <span>{label}</span>
             </button>
           ))}
@@ -456,19 +512,23 @@ function HomeScreen({
   data,
   upcoming,
   avgProgress,
+  activeWishlistCount,
+  activeGoalCount,
   onGo
 }: {
   data: BootstrapPayload;
   upcoming: MergedEvent[];
   avgProgress: number;
+  activeWishlistCount: number;
+  activeGoalCount: number;
   onGo: (screen: Screen) => void;
 }) {
   return (
     <section className="screen screen-home">
       <ScreenHeader title="Main page" description="A quick doorway into the shared workspace." />
       <section className="overview-grid">
-        <OverviewTile label="Wishlist" value={data.wishlist.length} detail="Ideas, places, gifts" tone="accent-peach" onClick={() => onGo("wishlist")} />
-        <OverviewTile label="Future goals" value={data.bucket.length} detail={`${avgProgress}% average progress`} tone="accent-mint" onClick={() => onGo("goals")} />
+        <OverviewTile label="Wishlist" value={activeWishlistCount} detail="Active ideas, places, gifts" tone="accent-peach" onClick={() => onGo("wishlist")} />
+        <OverviewTile label="Future goals" value={activeGoalCount} detail={`${avgProgress}% average progress`} tone="accent-mint" onClick={() => onGo("goals")} />
         <OverviewTile label="Upcoming events" value={upcoming.length} detail={upcoming[0]?.title || "No upcoming event"} tone="accent-coral" onClick={() => onGo("calendar")} />
         <OverviewTile label="Past memories" value={data.memories.length} detail="Photos and thoughts" tone="accent-lilac" onClick={() => onGo("memories")} />
       </section>
@@ -508,21 +568,27 @@ function WishlistScreen({
   sort,
   onFilter,
   onSort,
+  statusFilter,
+  onStatusFilter,
   onAdd,
   onSave,
-  onDelete
+  onDelete,
+  onStatusChange
 }: {
   items: WishlistItem[];
   filter: string;
   sort: SortMode;
   onFilter: (value: string) => void;
   onSort: (value: SortMode) => void;
+  statusFilter: "Active" | "Done" | "All";
+  onStatusFilter: (value: "Active" | "Done" | "All") => void;
   onAdd: () => void;
   onSave: (id: string, payload: Record<string, unknown>) => Promise<boolean>;
   onDelete: (id: string) => void;
+  onStatusChange: (id: string, status: "Done" | "Saved") => Promise<boolean>;
 }) {
   const categories = uniqueOptions(items.map((item) => item.category));
-  const visible = sortWishlist(filterCollection(items, filter, (item) => item.category), sort);
+  const visible = sortWishlist(filterByCompletion(filterCollection(items, filter, (item) => item.category), statusFilter), sort);
   return (
     <section className="screen">
       <ScreenHeader title="Wishlist" description="Shared ideas, easy to add and review." action="Add" onAction={onAdd} />
@@ -538,8 +604,9 @@ function WishlistScreen({
         onFilter={onFilter}
         onSort={onSort}
       />
+      <CompletionFilter value={statusFilter} onChange={onStatusFilter} />
       <div className="responsive-list">
-        {visible.length ? visible.map((item) => <WishlistCard key={item.id} item={item} onSave={onSave} onDelete={onDelete} />) : <Empty text="No wishlist items match this view." />}
+        {visible.length ? visible.map((item) => <WishlistCard key={item.id} item={item} onSave={onSave} onDelete={onDelete} onStatusChange={onStatusChange} />) : <Empty text="No wishlist items match this view." />}
       </div>
     </section>
   );
@@ -551,21 +618,27 @@ function GoalsScreen({
   sort,
   onFilter,
   onSort,
+  statusFilter,
+  onStatusFilter,
   onAdd,
   onSave,
-  onDelete
+  onDelete,
+  onStatusChange
 }: {
   items: GoalItem[];
   filter: string;
   sort: SortMode;
   onFilter: (value: string) => void;
   onSort: (value: SortMode) => void;
+  statusFilter: "Active" | "Done" | "All";
+  onStatusFilter: (value: "Active" | "Done" | "All") => void;
   onAdd: () => void;
   onSave: (id: string, payload: Record<string, unknown>) => Promise<boolean>;
   onDelete: (id: string) => void;
+  onStatusChange: (id: string, status: "Done" | "Planned") => Promise<boolean>;
 }) {
   const types = uniqueOptions(items.map((item) => item.type));
-  const visible = sortGoals(filterCollection(items, filter, (item) => item.type), sort);
+  const visible = sortGoals(filterByCompletion(filterCollection(items, filter, (item) => item.type), statusFilter), sort);
   return (
     <section className="screen">
       <ScreenHeader title="Future goals" description="Longer-term plans with progress tracking." action="Add" onAction={onAdd} />
@@ -581,8 +654,9 @@ function GoalsScreen({
         onFilter={onFilter}
         onSort={onSort}
       />
+      <CompletionFilter value={statusFilter} onChange={onStatusFilter} />
       <div className="responsive-list">
-        {visible.length ? visible.map((item) => <GoalCard key={item.id} item={item} onSave={onSave} onDelete={onDelete} />) : <Empty text="No future goals match this view." />}
+        {visible.length ? visible.map((item) => <GoalCard key={item.id} item={item} onSave={onSave} onDelete={onDelete} onStatusChange={onStatusChange} />) : <Empty text="No future goals match this view." />}
       </div>
     </section>
   );
@@ -639,32 +713,38 @@ function CalendarScreen({
 function MemoriesScreen({
   events,
   memories,
-  onSave
+  onSave,
+  hasUnseenPrompt
 }: {
   events: MergedEvent[];
   memories: MemoryEntry[];
   onSave: (payload: Record<string, unknown>) => void;
+  hasUnseenPrompt: boolean;
 }) {
   const memoryMap = new Map(memories.map((memory) => [memory.eventKey, memory]));
-  const [showCalendarEvents, setShowCalendarEvents] = useState(false);
-  const pastSharedEvents = events
-    .filter((event) => event.kind === "app" && event.source === "shared" && new Date(event.start).getTime() < Date.now())
+  const [showAddMemory, setShowAddMemory] = useState(false);
+  const savedEvents = events
+    .filter((event) => {
+      const memory = memoryMap.get(eventKey(event));
+      return memory && validMemory(memory.thoughts, memory.photoDataUrls);
+    })
     .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
-  const pastCalendarEvents = events
-    .filter((event) => event.kind === "google" && new Date(event.start).getTime() < Date.now())
+  const addableEvents = events
+    .filter((event) => !savedEvents.some((saved) => eventKey(saved) === eventKey(event)))
     .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
 
   return (
     <section className="screen">
       <ScreenHeader title="往事回顧" description="Add photos and thoughts to past moments, then revisit them together." />
       <div className="screen-actions">
-        <button className="secondary-btn" onClick={() => setShowCalendarEvents((current) => !current)} type="button">
-          {showCalendarEvents ? "Hide calendar events" : "Add a calendar event"}
+        <button className="secondary-btn notification-button" onClick={() => setShowAddMemory((current) => !current)} type="button">
+          {showAddMemory ? "Close Add Memory" : "Add Memory"}
+          {hasUnseenPrompt && <span className="notification-dot" />}
         </button>
       </div>
-      {pastSharedEvents.length ? (
+      {savedEvents.length ? (
         <div className="memory-review-list">
-          {pastSharedEvents.map((event) => (
+          {savedEvents.map((event) => (
             <MemoryComposer
               event={event}
               key={eventKey(event)}
@@ -674,18 +754,18 @@ function MemoriesScreen({
           ))}
         </div>
       ) : (
-        <Empty text="Past shared PairNest events will appear here after their date has passed." />
+        <Empty text="Saved photos and thoughts will appear here." />
       )}
-      {showCalendarEvents && (
+      {showAddMemory && (
         <section className="memory-calendar-events">
-          <h2>Past calendar events</h2>
-          {pastCalendarEvents.length ? (
+          <h2>Add Memory</h2>
+          {addableEvents.length ? (
             <div className="memory-review-list">
-              {pastCalendarEvents.map((event) => (
+              {addableEvents.map((event) => (
                 <MemoryComposer event={event} key={eventKey(event)} memory={memoryMap.get(eventKey(event))} onSave={onSave} />
               ))}
             </div>
-          ) : <Empty text="No past imported calendar events yet. Refresh your connected calendar first." />}
+          ) : <Empty text="No eligible past events need a memory." />}
         </section>
       )}
     </section>
@@ -1191,18 +1271,37 @@ function ListControls({
   );
 }
 
+function CompletionFilter({ value, onChange }: { value: "Active" | "Done" | "All"; onChange: (value: "Active" | "Done" | "All") => void }) {
+  return (
+    <div className="segmented completion-filter" aria-label="Completion status">
+      {(["Active", "Done", "All"] as const).map((option) => (
+        <button className={value === option ? "active" : ""} key={option} onClick={() => onChange(option)} type="button">{option}</button>
+      ))}
+    </div>
+  );
+}
+
 function WishlistCard({
   item,
   onSave,
-  onDelete
+  onDelete,
+  onStatusChange
 }: {
   item: WishlistItem;
   onSave: (id: string, payload: Record<string, unknown>) => Promise<boolean>;
   onDelete: (id: string) => void;
+  onStatusChange: (id: string, status: "Done" | "Saved") => Promise<boolean>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [statusSaving, setStatusSaving] = useState(false);
+  const isDone = isCompleted(item.status);
+  async function changeStatus() {
+    if (statusSaving) return;
+    setStatusSaving(true);
+    try { await onStatusChange(item.id, isDone ? "Saved" : "Done"); } finally { setStatusSaving(false); }
+  }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving) return;
@@ -1218,13 +1317,14 @@ function WishlistCard({
     }
   }
   return (
-    <article className={`list-card expandable-card ${wishlistAccentClass(item.category)}`}>
+    <article className={`list-card expandable-card ${wishlistAccentClass(item.category)} ${isDone ? "completed-card" : ""}`}>
       <button className="tile-button" onClick={() => setExpanded((value) => !value)} type="button">
         <div>
           <h3>{item.title}</h3>
           <div className="meta-row">
             <span className={`pill category-pill ${wishlistAccentClass(item.category)}`}>{item.category}</span>
             <span className={`pill status-pill ${priorityClass(item.priority)}`}>{item.priority}</span>
+            {isDone && <span className="pill status-pill status-mint">Done</span>}
             <span className="pill person-pill">{item.addedBy}</span>
           </div>
         </div>
@@ -1235,6 +1335,7 @@ function WishlistCard({
         {item.link && <a className="inline-link" href={item.link} target="_blank" rel="noreferrer">Open link</a>}
         {item.mapUrl && <a className="inline-link map-link" href={item.mapUrl} target="_blank" rel="noreferrer"><Icons.MapPin size={15} /> Map</a>}
       </div>
+      <button className="ghost-btn completion-action" onClick={changeStatus} type="button" disabled={statusSaving}>{statusSaving ? "Saving..." : isDone ? "Reactivate" : "Done"}</button>
       {expanded && (
         <form className="form edit-form" onSubmit={submit}>
           <Field label="Title" name="title" required defaultValue={item.title} />
@@ -1258,15 +1359,24 @@ function WishlistCard({
 function GoalCard({
   item,
   onSave,
-  onDelete
+  onDelete,
+  onStatusChange
 }: {
   item: GoalItem;
   onSave: (id: string, payload: Record<string, unknown>) => Promise<boolean>;
   onDelete: (id: string) => void;
+  onStatusChange: (id: string, status: "Done" | "Planned") => Promise<boolean>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [statusSaving, setStatusSaving] = useState(false);
+  const isDone = isCompleted(item.status);
+  async function changeStatus() {
+    if (statusSaving) return;
+    setStatusSaving(true);
+    try { await onStatusChange(item.id, isDone ? "Planned" : "Done"); } finally { setStatusSaving(false); }
+  }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving) return;
@@ -1282,7 +1392,7 @@ function GoalCard({
     }
   }
   return (
-    <article className={`list-card expandable-card ${goalAccentClass(item.type)}`}>
+    <article className={`list-card expandable-card ${goalAccentClass(item.type)} ${isDone ? "completed-card" : ""}`}>
       <button className="tile-button" onClick={() => setExpanded((value) => !value)} type="button">
         <div>
           <h3>{item.title}</h3>
@@ -1298,6 +1408,7 @@ function GoalCard({
       <div className="split small"><span>{item.targetDate || "No target date"}</span><strong>{item.progress}%</strong></div>
       {item.note && <p>{item.note}</p>}
       {item.mapUrl && <a className="inline-link map-link" href={item.mapUrl} target="_blank" rel="noreferrer"><Icons.MapPin size={15} /> Map</a>}
+      <button className="ghost-btn completion-action" onClick={changeStatus} type="button" disabled={statusSaving}>{statusSaving ? "Saving..." : isDone ? "Reactivate" : "Done"}</button>
       {expanded && (
         <form className="form edit-form" onSubmit={submit}>
           <Field label="Goal title" name="title" required defaultValue={item.title} />
@@ -1442,6 +1553,15 @@ function getUpcoming(events: MergedEvent[]) {
 function filterCollection<T>(items: T[], filter: string, getter: (item: T) => string) {
   if (filter === "All") return items;
   return items.filter((item) => getter(item) === filter);
+}
+
+function isCompleted(status: string) {
+  return status.trim().toLowerCase() === "done";
+}
+
+function filterByCompletion<T extends { status: string }>(items: T[], filter: "Active" | "Done" | "All") {
+  if (filter === "All") return items;
+  return items.filter((item) => filter === "Done" ? isCompleted(item.status) : !isCompleted(item.status));
 }
 
 function uniqueOptions(values: string[]) {

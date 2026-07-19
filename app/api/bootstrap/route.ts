@@ -1,12 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { DEFAULT_WORKSPACE_SLUG } from "@/lib/defaults";
-import { bootstrapWorkspace } from "@/lib/repository";
+import { bootstrapWorkspace, refreshCalendar } from "@/lib/repository";
 
 export async function GET(request: NextRequest) {
   const coupleId = request.nextUrl.searchParams.get("coupleId") || DEFAULT_WORKSPACE_SLUG;
 
   try {
-    return NextResponse.json(await bootstrapWorkspace(coupleId));
+    const payload = await bootstrapWorkspace(coupleId);
+    after(() => refreshCalendar(coupleId).catch(() => undefined));
+    return NextResponse.json(payload);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown bootstrap error";
     const errorCode = typeof error === "object" && error && "code" in error
