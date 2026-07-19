@@ -745,12 +745,11 @@ function MemoriesScreen({
       ) : (
         <Empty text="Saved photos and thoughts will appear here." />
       )}
-      <div className="screen-actions memory-add-action">
-        <button className="ghost-btn notification-button" onClick={() => setShowAddMemory((current) => !current)} type="button">
-          {showAddMemory ? "Close Add Memory" : "Add Memory"}
+      <button className="fab memory-add-fab notification-button" onClick={() => setShowAddMemory((current) => !current)} type="button">
+        <Icons.Plus size={20} />
+        <span>{showAddMemory ? "Close" : "Add memory"}</span>
           {hasUnseenPrompt && <span className="notification-dot" />}
-        </button>
-      </div>
+      </button>
       {showAddMemory && (
         <section className="memory-calendar-events">
           <h2>Add Memory</h2>
@@ -837,7 +836,7 @@ function MemoryComposer({
                 {photoDataUrls.length > 3 && <span className="memory-photo-count">+{photoDataUrls.length - 3}</span>}
               </div>
             )}
-            <div>
+            <div className="memory-compact-copy">
               <span className={`event-kind-badge kind-${event.kind}`}>{event.kind === "anniversary" ? "Milestone" : event.kind === "google" ? "Calendar" : "Shared"}</span>
               <h3>{event.title}</h3>
               <p className="memory-compact-summary">

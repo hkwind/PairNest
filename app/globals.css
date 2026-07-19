@@ -1060,15 +1060,25 @@ a {
   padding: 12px;
 }
 
-.memory-compact-content {
-  display: flex;
-  min-width: 0;
-  align-items: flex-start;
-  gap: 12px;
+.memory-compact-card .tile-button {
+  display: block;
+  position: relative;
 }
 
-.memory-compact-content > div {
+.memory-compact-card .expand-hint {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+}
+
+.memory-compact-content {
+  display: grid;
+  gap: 10px;
+}
+
+.memory-compact-copy {
   min-width: 0;
+  padding-right: 54px;
 }
 
 .memory-compact-content h3 {
@@ -1094,38 +1104,33 @@ a {
 }
 
 .memory-compact-photos {
-  display: flex;
   position: relative;
-  width: 64px;
-  min-width: 64px;
-  height: 64px;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
 }
 
 .memory-compact-photo {
-  width: 46px;
-  height: 58px;
-  flex: 0 0 46px;
-  border-radius: 10px;
+  width: 100%;
+  aspect-ratio: 4 / 3;
   object-fit: cover;
-  border: 2px solid #fff;
-}
-
-.memory-compact-photo + .memory-compact-photo {
-  margin-left: -28px;
+  border-radius: 8px;
 }
 
 .memory-photo-count {
   display: grid;
-  width: 28px;
-  height: 28px;
-  margin-left: -20px;
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 32px;
+  height: 32px;
   place-items: center;
-  border: 2px solid #fff;
+  border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 999px;
-  background: var(--ink);
+  background: rgba(30, 37, 47, 0.86);
   color: #fff;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 800;
 }
 
@@ -1351,8 +1356,9 @@ textarea {
   margin: 0 0 16px;
 }
 
-.memory-add-action {
-  margin-top: 16px;
+.memory-add-fab .notification-dot {
+  top: -5px;
+  right: -5px;
 }
 
 .sync-warning {
