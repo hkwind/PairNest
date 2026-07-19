@@ -100,6 +100,7 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
   const colors = parseColors(settings?.colors);
   const partnerAName = settings?.partnerAName || "Alex";
   const partnerBName = settings?.partnerBName || "Jamie";
+  const appDisplayName = `Pairnest of ${partnerAName} and ${partnerBName}`;
   const partnerNames = [partnerAName, partnerBName];
   const eligibleEvents = useMemo(() => uniqueEvents((data?.mergedEvents || []).filter((event) => isEligibleSharedEvent(event, partnerNames))), [data, partnerAName, partnerBName]);
   const upcoming = useMemo(() => eligibleEvents.filter((event) => isFutureUnfinishedEvent(event)), [eligibleEvents]);
@@ -110,9 +111,6 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
   const hasUnseenMemoryPrompt = Array.from(unrecordedMemoryKeys).some((key) => !seenMemoryEventKeys.includes(key));
   const activeWishlistCount = data?.wishlist.filter((item) => !isCompleted(item.status)).length || 0;
   const activeGoals = data?.bucket.filter((item) => !isCompleted(item.status)) || [];
-  const avgProgress = activeGoals.length
-    ? Math.round(activeGoals.reduce((sum, item) => sum + item.progress, 0) / activeGoals.length)
-    : 0;
 
   function showToast(message: string) {
     setToast(message);
@@ -165,7 +163,7 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
   return (
     <div className="app-shell" style={cssVars}>
       <aside className="side-nav" aria-label="Primary navigation">
-        <Brand title={settings?.workspaceName || "PairNest"} subtitle={subtitle(screen)} />
+        <Brand title={appDisplayName} subtitle={subtitle(screen)} />
         <nav>
           {navItems.map(({ screen: itemScreen, label, Icon }) => (
             <button
@@ -183,7 +181,7 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
 
       <div className="app-main">
         <header className="topbar">
-          <Brand title={settings?.workspaceName || "PairNest"} subtitle={subtitle(screen)} />
+          <Brand title={appDisplayName} subtitle={subtitle(screen)} />
           {data?.calendarSync.lastError && <button className="sync-warning" onClick={() => openScreen("settings")} type="button">Calendar sync needs retry</button>}
           <button className="icon-btn" onClick={() => loadAll()} type="button" aria-label="Refresh">
             <Icons.RefreshCw size={20} />
@@ -210,7 +208,6 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
                 <HomeScreen
                   data={data}
                   upcoming={upcoming}
-                  avgProgress={avgProgress}
                   activeWishlistCount={activeWishlistCount}
                   activeGoalCount={activeGoals.length}
                   onGo={openScreen}
@@ -511,14 +508,12 @@ function Brand({ title, subtitle }: { title: string; subtitle: string }) {
 function HomeScreen({
   data,
   upcoming,
-  avgProgress,
   activeWishlistCount,
   activeGoalCount,
   onGo
 }: {
   data: BootstrapPayload;
   upcoming: MergedEvent[];
-  avgProgress: number;
   activeWishlistCount: number;
   activeGoalCount: number;
   onGo: (screen: Screen) => void;
@@ -528,8 +523,8 @@ function HomeScreen({
       <ScreenHeader title="Main page" description="A quick doorway into the shared workspace." />
       <section className="overview-grid">
         <OverviewTile label="Wishlist" value={activeWishlistCount} detail="Active ideas, places, gifts" tone="accent-peach" onClick={() => onGo("wishlist")} />
-        <OverviewTile label="Future goals" value={activeGoalCount} detail={`${avgProgress}% average progress`} tone="accent-mint" onClick={() => onGo("goals")} />
-        <OverviewTile label="Upcoming events" value={upcoming.length} detail={upcoming[0]?.title || "No upcoming event"} tone="accent-coral" onClick={() => onGo("calendar")} />
+        <OverviewTile label="Future goals" value={activeGoalCount} detail="Shared plans ahead" tone="accent-mint" onClick={() => onGo("goals")} />
+        <OverviewTile label="Upcoming events" value={upcoming.length} detail={`With ${data.settings.partnerAName} & ${data.settings.partnerBName} ~`} tone="accent-coral" onClick={() => onGo("calendar")} />
         <OverviewTile label="Past memories" value={data.memories.length} detail="Photos and thoughts" tone="accent-lilac" onClick={() => onGo("memories")} />
       </section>
       <section className="panel panel-coral">
@@ -591,7 +586,7 @@ function WishlistScreen({
   const visible = sortWishlist(filterByCompletion(filterCollection(items, filter, (item) => item.category), statusFilter), sort);
   return (
     <section className="screen">
-      <ScreenHeader title="Wishlist" description="Shared ideas, easy to add and review." action="Add" onAction={onAdd} />
+      <ScreenHeader title="Wishlist" description="Shared ideas, easy to add and review." />
       <ListControls
         filter={filter}
         sort={sort}
@@ -641,7 +636,7 @@ function GoalsScreen({
   const visible = sortGoals(filterByCompletion(filterCollection(items, filter, (item) => item.type), statusFilter), sort);
   return (
     <section className="screen">
-      <ScreenHeader title="Future goals" description="Longer-term plans with progress tracking." action="Add" onAction={onAdd} />
+      <ScreenHeader title="Future goals" description="Longer-term plans with progress tracking." />
       <ListControls
         filter={filter}
         sort={sort}
@@ -736,12 +731,6 @@ function MemoriesScreen({
   return (
     <section className="screen">
       <ScreenHeader title="往事回顧" description="Add photos and thoughts to past moments, then revisit them together." />
-      <div className="screen-actions">
-        <button className="secondary-btn notification-button" onClick={() => setShowAddMemory((current) => !current)} type="button">
-          {showAddMemory ? "Close Add Memory" : "Add Memory"}
-          {hasUnseenPrompt && <span className="notification-dot" />}
-        </button>
-      </div>
       {savedEvents.length ? (
         <div className="memory-review-list">
           {savedEvents.map((event) => (
@@ -756,6 +745,12 @@ function MemoriesScreen({
       ) : (
         <Empty text="Saved photos and thoughts will appear here." />
       )}
+      <div className="screen-actions memory-add-action">
+        <button className="ghost-btn notification-button" onClick={() => setShowAddMemory((current) => !current)} type="button">
+          {showAddMemory ? "Close Add Memory" : "Add Memory"}
+          {hasUnseenPrompt && <span className="notification-dot" />}
+        </button>
+      </div>
       {showAddMemory && (
         <section className="memory-calendar-events">
           <h2>Add Memory</h2>
@@ -1335,7 +1330,7 @@ function WishlistCard({
         {item.link && <a className="inline-link" href={item.link} target="_blank" rel="noreferrer">Open link</a>}
         {item.mapUrl && <a className="inline-link map-link" href={item.mapUrl} target="_blank" rel="noreferrer"><Icons.MapPin size={15} /> Map</a>}
       </div>
-      <button className="ghost-btn completion-action" onClick={changeStatus} type="button" disabled={statusSaving}>{statusSaving ? "Saving..." : isDone ? "Reactivate" : "Done"}</button>
+      {!expanded && <button className="secondary-btn completion-action" onClick={changeStatus} type="button" disabled={statusSaving}>{statusSaving ? "Saving..." : isDone ? "Reactivate" : "Done"}</button>}
       {expanded && (
         <form className="form edit-form" onSubmit={submit}>
           <Field label="Title" name="title" required defaultValue={item.title} />
@@ -1408,7 +1403,7 @@ function GoalCard({
       <div className="split small"><span>{item.targetDate || "No target date"}</span><strong>{item.progress}%</strong></div>
       {item.note && <p>{item.note}</p>}
       {item.mapUrl && <a className="inline-link map-link" href={item.mapUrl} target="_blank" rel="noreferrer"><Icons.MapPin size={15} /> Map</a>}
-      <button className="ghost-btn completion-action" onClick={changeStatus} type="button" disabled={statusSaving}>{statusSaving ? "Saving..." : isDone ? "Reactivate" : "Done"}</button>
+      {!expanded && <button className="secondary-btn completion-action" onClick={changeStatus} type="button" disabled={statusSaving}>{statusSaving ? "Saving..." : isDone ? "Reactivate" : "Done"}</button>}
       {expanded && (
         <form className="form edit-form" onSubmit={submit}>
           <Field label="Goal title" name="title" required defaultValue={item.title} />

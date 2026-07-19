@@ -1260,13 +1260,26 @@ textarea {
 }
 
 .completion-action {
-  margin-top: 10px;
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.expandable-card:has(.completion-action) {
+  min-height: 140px;
+  padding-bottom: 62px;
 }
 
 .screen-actions {
   display: flex;
   justify-content: flex-end;
   margin: 0 0 16px;
+}
+
+.memory-add-action {
+  margin-top: 16px;
 }
 
 .sync-warning {
