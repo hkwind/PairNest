@@ -829,11 +829,21 @@ function MemoryComposer({
       <article className="memory-review-card memory-compact-card">
         <button className="tile-button" onClick={() => setExpanded(true)} type="button">
           <div className="memory-compact-content">
-            {photoDataUrls[0] && <img className="memory-compact-photo" src={photoDataUrls[0]} alt="" />}
+            {photoDataUrls.length > 0 && (
+              <div className="memory-compact-photos" aria-label={`${photoDataUrls.length} saved photo${photoDataUrls.length === 1 ? "" : "s"}`}>
+                {photoDataUrls.slice(0, 3).map((src, index) => (
+                  <img className="memory-compact-photo" src={src} alt="" key={`${src.slice(0, 32)}-${index}`} />
+                ))}
+                {photoDataUrls.length > 3 && <span className="memory-photo-count">+{photoDataUrls.length - 3}</span>}
+              </div>
+            )}
             <div>
               <span className={`event-kind-badge kind-${event.kind}`}>{event.kind === "anniversary" ? "Milestone" : event.kind === "google" ? "Calendar" : "Shared"}</span>
               <h3>{event.title}</h3>
-              <p>{formatSmartDate(event.start)}{thoughts ? ` - ${thoughts}` : ""}</p>
+              <p className="memory-compact-summary">
+                <span>{formatSmartDate(event.start)}</span>
+                {thoughts && <span className="memory-compact-thoughts">{thoughts}</span>}
+              </p>
             </div>
           </div>
           <span className="expand-hint">Edit</span>

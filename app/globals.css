@@ -1063,7 +1063,7 @@ a {
 .memory-compact-content {
   display: flex;
   min-width: 0;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
 }
 
@@ -1078,21 +1078,55 @@ a {
   white-space: nowrap;
 }
 
-.memory-compact-content p {
-  display: -webkit-box;
-  overflow: hidden;
+.memory-compact-summary {
   margin: 4px 0 0;
   color: var(--muted);
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+}
+
+.memory-compact-thoughts {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+}
+
+.memory-compact-thoughts::before {
+  content: " - ";
+}
+
+.memory-compact-photos {
+  display: flex;
+  position: relative;
+  width: 64px;
+  min-width: 64px;
+  height: 64px;
+  align-items: center;
 }
 
 .memory-compact-photo {
-  width: 58px;
+  width: 46px;
   height: 58px;
-  flex: 0 0 auto;
+  flex: 0 0 46px;
   border-radius: 10px;
   object-fit: cover;
+  border: 2px solid #fff;
+}
+
+.memory-compact-photo + .memory-compact-photo {
+  margin-left: -28px;
+}
+
+.memory-photo-count {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  margin-left: -20px;
+  place-items: center;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
 }
 
 .memory-photo-grid {
@@ -1306,6 +1340,7 @@ textarea {
 
 .completion-action {
   min-height: auto;
+  margin-left: auto;
   padding: 6px 10px;
   color: var(--muted);
 }
