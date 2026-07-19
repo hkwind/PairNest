@@ -144,7 +144,6 @@ a {
   min-width: 0;
 }
 
-.title-wrap h1,
 .title-wrap p {
   overflow: hidden;
   margin: 0;
@@ -153,6 +152,11 @@ a {
 }
 
 .title-wrap h1 {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   font-size: 1.02rem;
   font-weight: 700;
   line-height: 1.1;
@@ -603,7 +607,8 @@ a {
 .link-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  align-items: center;
+  gap: 14px;
 }
 
 .map-link {
@@ -1050,6 +1055,46 @@ a {
   color: var(--muted);
 }
 
+.memory-compact-card {
+  gap: 0;
+  padding: 12px;
+}
+
+.memory-compact-content {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.memory-compact-content > div {
+  min-width: 0;
+}
+
+.memory-compact-content h3 {
+  overflow: hidden;
+  margin: 6px 0 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-compact-content p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 4px 0 0;
+  color: var(--muted);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.memory-compact-photo {
+  width: 58px;
+  height: 58px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
 .memory-photo-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1260,16 +1305,9 @@ textarea {
 }
 
 .completion-action {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
-  min-height: 36px;
-  padding: 0 12px;
-}
-
-.expandable-card:has(.completion-action) {
-  min-height: 140px;
-  padding-bottom: 62px;
+  min-height: auto;
+  padding: 6px 10px;
+  color: var(--muted);
 }
 
 .screen-actions {

@@ -713,7 +713,7 @@ function MemoriesScreen({
 }: {
   events: MergedEvent[];
   memories: MemoryEntry[];
-  onSave: (payload: Record<string, unknown>) => void;
+  onSave: (payload: Record<string, unknown>) => Promise<boolean>;
   hasUnseenPrompt: boolean;
 }) {
   const memoryMap = new Map(memories.map((memory) => [memory.eventKey, memory]));
@@ -774,12 +774,16 @@ function MemoryComposer({
 }: {
   event: MergedEvent;
   memory?: MemoryEntry;
-  onSave: (payload: Record<string, unknown>) => void;
+  onSave: (payload: Record<string, unknown>) => Promise<boolean>;
 }) {
   const [thoughts, setThoughts] = useState(memory?.thoughts || "");
   const [photoDataUrls, setPhotoDataUrls] = useState<string[]>(memory?.photoDataUrls || []);
   const [photoError, setPhotoError] = useState("");
   const [optimizingPhotos, setOptimizingPhotos] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const hasSavedContent = validMemory(memory?.thoughts || "", memory?.photoDataUrls || []);
+  const [expanded, setExpanded] = useState(!hasSavedContent);
 
   useEffect(() => {
     setThoughts(memory?.thoughts || "");
@@ -801,14 +805,41 @@ function MemoryComposer({
     eventChange.target.value = "";
   }
 
-  function save() {
-    onSave({
-      eventKey: eventKey(event),
-      eventTitle: event.title,
-      eventStart: event.start,
-      thoughts,
-      photoDataUrls
-    });
+  async function save() {
+    if (saving) return;
+    setSaving(true);
+    setSaveError("");
+    try {
+      const saved = await onSave({
+        eventKey: eventKey(event),
+        eventTitle: event.title,
+        eventStart: event.start,
+        thoughts,
+        photoDataUrls
+      });
+      if (saved) setExpanded(false);
+      else setSaveError("Could not save this memory. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (hasSavedContent && !expanded) {
+    return (
+      <article className="memory-review-card memory-compact-card">
+        <button className="tile-button" onClick={() => setExpanded(true)} type="button">
+          <div className="memory-compact-content">
+            {photoDataUrls[0] && <img className="memory-compact-photo" src={photoDataUrls[0]} alt="" />}
+            <div>
+              <span className={`event-kind-badge kind-${event.kind}`}>{event.kind === "anniversary" ? "Milestone" : event.kind === "google" ? "Calendar" : "Shared"}</span>
+              <h3>{event.title}</h3>
+              <p>{formatSmartDate(event.start)}{thoughts ? ` - ${thoughts}` : ""}</p>
+            </div>
+          </div>
+          <span className="expand-hint">Edit</span>
+        </button>
+      </article>
+    );
   }
 
   return (
@@ -840,9 +871,10 @@ function MemoryComposer({
           {optimizingPhotos ? "Preparing photos..." : "Add photos"}
           <input accept="image/*" multiple onChange={addPhotos} type="file" disabled={optimizingPhotos} />
         </label>
-        <button className="primary-btn" onClick={save} type="button"><Icons.Save size={16} />Save memory</button>
+        <button className="primary-btn" onClick={save} type="button" disabled={saving}><Icons.Save size={16} />{saving ? "Saving..." : "Save memory"}</button>
       </div>
       {photoError && <p className="form-error" role="alert">{photoError}</p>}
+      {saveError && <p className="form-error" role="alert">{saveError}</p>}
     </article>
   );
 }
@@ -1329,8 +1361,8 @@ function WishlistCard({
       <div className="link-row">
         {item.link && <a className="inline-link" href={item.link} target="_blank" rel="noreferrer">Open link</a>}
         {item.mapUrl && <a className="inline-link map-link" href={item.mapUrl} target="_blank" rel="noreferrer"><Icons.MapPin size={15} /> Map</a>}
+        {!expanded && <button className="expand-hint completion-action" onClick={changeStatus} type="button" disabled={statusSaving}>{statusSaving ? "Saving..." : isDone ? "Reactivate" : "Done"}</button>}
       </div>
-      {!expanded && <button className="secondary-btn completion-action" onClick={changeStatus} type="button" disabled={statusSaving}>{statusSaving ? "Saving..." : isDone ? "Reactivate" : "Done"}</button>}
       {expanded && (
         <form className="form edit-form" onSubmit={submit}>
           <Field label="Title" name="title" required defaultValue={item.title} />
@@ -1402,8 +1434,10 @@ function GoalCard({
       <div className="progress-track"><span style={{ width: `${item.progress}%` }} /></div>
       <div className="split small"><span>{item.targetDate || "No target date"}</span><strong>{item.progress}%</strong></div>
       {item.note && <p>{item.note}</p>}
-      {item.mapUrl && <a className="inline-link map-link" href={item.mapUrl} target="_blank" rel="noreferrer"><Icons.MapPin size={15} /> Map</a>}
-      {!expanded && <button className="secondary-btn completion-action" onClick={changeStatus} type="button" disabled={statusSaving}>{statusSaving ? "Saving..." : isDone ? "Reactivate" : "Done"}</button>}
+      <div className="link-row">
+        {item.mapUrl && <a className="inline-link map-link" href={item.mapUrl} target="_blank" rel="noreferrer"><Icons.MapPin size={15} /> Map</a>}
+        {!expanded && <button className="expand-hint completion-action" onClick={changeStatus} type="button" disabled={statusSaving}>{statusSaving ? "Saving..." : isDone ? "Reactivate" : "Done"}</button>}
+      </div>
       {expanded && (
         <form className="form edit-form" onSubmit={submit}>
           <Field label="Goal title" name="title" required defaultValue={item.title} />
