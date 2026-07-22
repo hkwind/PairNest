@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, ChangeEvent, FormEvent, ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/client-api";
 import { parseAnniversaryConfig, parseColors } from "@/lib/defaults";
 import { isEligibleSharedEvent, isFutureUnfinishedEvent, uniqueEvents, validMemory } from "@/lib/event-rules";
@@ -119,6 +119,7 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
   const partnerNames = [partnerAName, partnerBName];
   const eligibleEvents = useMemo(() => uniqueEvents((data?.mergedEvents || []).filter((event) => isEligibleSharedEvent(event, partnerNames))), [data, partnerAName, partnerBName]);
   const upcoming = useMemo(() => eligibleEvents.filter((event) => isFutureUnfinishedEvent(event)), [eligibleEvents]);
+  const nextUpEvents = useMemo(() => upcoming.slice(0, 4), [upcoming]);
   const eligiblePastEvents = useMemo(() => eligibleEvents.filter((event) => !isFutureUnfinishedEvent(event)), [eligibleEvents]);
   const unrecordedMemoryKeys = useMemo(() => new Set(eligiblePastEvents
     .filter((event) => !data?.recordedMemoryEventKeys.includes(eventKey(event)))
@@ -222,7 +223,7 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
               {screen === "home" && (
                 <HomeScreen
                   data={data}
-                  upcoming={upcoming}
+                  upcoming={nextUpEvents}
                   activeWishlistCount={activeWishlistCount}
                   activeGoalCount={activeGoals.length}
                   onGo={openScreen}
@@ -760,14 +761,13 @@ function MemoriesScreen({
       ) : (
         <Empty text="Saved photos and thoughts will appear here." />
       )}
-      <button className="fab memory-add-fab notification-button" onClick={() => setShowAddMemory((current) => !current)} type="button">
+      <button className="fab memory-add-fab notification-button" onClick={() => setShowAddMemory(true)} type="button">
         <Icons.Plus size={20} />
-        <span>{showAddMemory ? "Close" : "Add memory"}</span>
-          {hasUnseenPrompt && <span className="notification-dot" />}
+        <span>Add memory</span>
+        {hasUnseenPrompt && <span className="notification-dot" />}
       </button>
       {showAddMemory && (
-        <section className="memory-calendar-events">
-          <h2>Add Memory</h2>
+        <ModalShell title="Add Memory" description="Choose a past shared moment to save photos and thoughts." onClose={() => setShowAddMemory(false)}>
           {addableEvents.length ? (
             <div className="memory-review-list">
               {addableEvents.map((event) => (
@@ -775,7 +775,7 @@ function MemoriesScreen({
               ))}
             </div>
           ) : <Empty text="No eligible past events need a memory." />}
-        </section>
+        </ModalShell>
       )}
     </section>
   );
@@ -796,6 +796,7 @@ function MemoryComposer({
   const [optimizingPhotos, setOptimizingPhotos] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const editorRef = useRef<HTMLElement>(null);
   const hasSavedContent = validMemory(memory?.thoughts || "", memory?.photoDataUrls || []);
   const [expanded, setExpanded] = useState(!hasSavedContent);
 
@@ -803,6 +804,15 @@ function MemoryComposer({
     setThoughts(memory?.thoughts || "");
     setPhotoDataUrls(memory?.photoDataUrls || []);
   }, [memory?.thoughts, memory?.photoDataUrls]);
+
+  useEffect(() => {
+    if (!expanded || !hasSavedContent) return;
+    const closeEditor = (event: PointerEvent) => {
+      if (!editorRef.current?.contains(event.target as Node)) setExpanded(false);
+    };
+    document.addEventListener("pointerdown", closeEditor);
+    return () => document.removeEventListener("pointerdown", closeEditor);
+  }, [expanded, hasSavedContent]);
 
   async function addPhotos(eventChange: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(eventChange.target.files || []).slice(0, 6 - photoDataUrls.length);
@@ -867,7 +877,7 @@ function MemoryComposer({
   }
 
   return (
-    <article className="memory-review-card">
+    <article className="memory-review-card" ref={editorRef}>
       <div className="memory-review-head">
         <div>
           <span className={`event-kind-badge kind-${event.kind}`}>{event.kind === "anniversary" ? "Milestone" : event.kind === "google" ? "Calendar" : "Shared"}</span>
