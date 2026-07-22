@@ -460,6 +460,10 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
       )}
       {data && modal === "event" && (
         <EventModal
+          wishlist={data.wishlist}
+          goals={data.bucket}
+          partnerAName={partnerAName}
+          partnerBName={partnerBName}
           onClose={() => setModal(null)}
           onSubmit={(payload) =>
             mutate(async () => {
@@ -482,6 +486,10 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
       {data && modal === "event-edit" && editingEvent && (
         <EventModal
           event={editingEvent}
+          wishlist={data.wishlist}
+          goals={data.bucket}
+          partnerAName={partnerAName}
+          partnerBName={partnerBName}
           onClose={() => { setEditingEvent(null); setModal(null); }}
           onSubmit={(payload) =>
             mutate(async () => {
@@ -1136,17 +1144,49 @@ function EventModal(props: {
   onClose: () => void;
   onSubmit: (payload: Record<string, unknown>) => void;
   event?: CustomEventItem;
+  wishlist: WishlistItem[];
+  goals: GoalItem[];
+  partnerAName: string;
+  partnerBName: string;
 }) {
   const editing = Boolean(props.event);
+  const [selectedTemplate, setSelectedTemplate] = useState("");
+  const templates = [
+    ...props.wishlist.filter((item) => !isCompleted(item.status)).map((item) => ({
+      key: `wishlist:${item.id}`,
+      label: `Wishlist: ${item.title}`,
+      title: item.title,
+      mapUrl: item.mapUrl,
+      note: [item.note, item.link ? `Link: ${item.link}` : ""].filter(Boolean).join("\n")
+    })),
+    ...props.goals.filter((item) => !isCompleted(item.status)).map((item) => ({
+      key: `goal:${item.id}`,
+      label: `Goal: ${item.title}`,
+      title: item.title,
+      mapUrl: item.mapUrl,
+      note: item.note
+    }))
+  ];
+  const template = templates.find((item) => item.key === selectedTemplate);
   return (
     <ModalShell title={editing ? "Edit event" : "Add shared event"} description="PairNest events sync to the connected calendar for their selected scope." onClose={props.onClose}>
-      <form className="form" onSubmit={(event) => handleForm(event, props.onSubmit)}>
-        <Field label="Event title" name="title" required placeholder="Friday dinner hold" defaultValue={props.event?.title} />
+      <form className="form" key={selectedTemplate || "custom"} onSubmit={(event) => handleForm(event, props.onSubmit)}>
+        {!editing && templates.length > 0 && (
+          <Select
+            label="Start from"
+            name="eventTemplate"
+            options={["", ...templates.map((item) => item.key)]}
+            labels={["Blank shared event", ...templates.map((item) => item.label)]}
+            value={selectedTemplate}
+            onChange={setSelectedTemplate}
+          />
+        )}
+        <Field label="Event title" name="title" required placeholder="Friday dinner hold" defaultValue={template?.title || props.event?.title} />
         <Field label="Start" name="start" type="datetime-local" required defaultValue={toDateTimeLocal(props.event?.start)} />
         <Field label="End" name="end" type="datetime-local" defaultValue={toDateTimeLocal(props.event?.end)} />
-        <Select label="Scope" name="source" options={["shared", "a", "b"]} labels={["Shared", "Partner A side", "Partner B side"]} defaultValue={props.event?.source} />
-        <Field label="Google Maps URL" name="mapUrl" type="url" placeholder="https://maps.google.com/..." defaultValue={props.event?.mapUrl} />
-        <Textarea label="Note" name="note" placeholder="Reservation, location, or reminder" defaultValue={props.event?.note} />
+        <Select label="Scope" name="source" options={["shared", "a", "b"]} labels={["Shared", props.partnerAName, props.partnerBName]} defaultValue={props.event?.source} />
+        <Field label="Google Maps URL" name="mapUrl" type="url" placeholder="https://maps.google.com/..." defaultValue={template?.mapUrl || props.event?.mapUrl} />
+        <Textarea label="Note" name="note" placeholder="Reservation, location, or reminder" defaultValue={template?.note || props.event?.note} />
         <ModalActions onClose={props.onClose} submitLabel={editing ? "Save event" : "Add event"} />
       </form>
     </ModalShell>
@@ -1221,11 +1261,11 @@ function Field(props: {
   );
 }
 
-function Select(props: { label: string; name: string; options: string[]; labels?: string[]; defaultValue?: string }) {
+function Select(props: { label: string; name: string; options: string[]; labels?: string[]; defaultValue?: string; value?: string; onChange?: (value: string) => void }) {
   return (
     <div className="field">
       <label htmlFor={props.name}>{props.label}</label>
-      <select id={props.name} name={props.name} defaultValue={props.defaultValue}>
+      <select id={props.name} name={props.name} defaultValue={props.value === undefined ? props.defaultValue : undefined} value={props.value} onChange={(event) => props.onChange?.(event.target.value)}>
         {props.options.map((option, index) => (
           <option key={option} value={option}>
             {props.labels?.[index] || option}
