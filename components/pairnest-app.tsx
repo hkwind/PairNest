@@ -125,8 +125,8 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
     .filter((event) => !data?.recordedMemoryEventKeys.includes(eventKey(event)))
     .map(eventKey)), [data?.memories, eligiblePastEvents]);
   const hasUnseenMemoryPrompt = Array.from(unrecordedMemoryKeys).some((key) => !seenMemoryEventKeys.includes(key));
-  const activeWishlistCount = data?.wishlist.filter((item) => !isCompleted(item.status)).length || 0;
-  const activeGoals = data?.bucket.filter((item) => !isCompleted(item.status)) || [];
+  const activeWishlistCount = data?.homeSummary.activeWishlistCount || 0;
+  const activeGoals = data?.homeSummary.activeGoalCount || 0;
 
   function showToast(message: string) {
     setToast(message);
@@ -225,7 +225,7 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
                   data={data}
                   upcoming={nextUpEvents}
                   activeWishlistCount={activeWishlistCount}
-                  activeGoalCount={activeGoals.length}
+                  activeGoalCount={activeGoals}
                   onGo={openScreen}
                 />
               )}
@@ -541,7 +541,7 @@ function HomeScreen({
         <OverviewTile label="Wishlist" value={activeWishlistCount} detail="Active ideas, places, gifts" tone="accent-peach" onClick={() => onGo("wishlist")} />
         <OverviewTile label="Future goals" value={activeGoalCount} detail="Shared plans ahead" tone="accent-mint" onClick={() => onGo("goals")} />
         <OverviewTile label="Upcoming events" value={upcoming.length} detail={`With ${data.settings.partnerAName} & ${data.settings.partnerBName} ~`} tone="accent-coral" onClick={() => onGo("calendar")} />
-        <OverviewTile label="Past memories" value={data.memories.length} detail="Photos and thoughts" tone="accent-lilac" onClick={() => onGo("memories")} />
+        <OverviewTile label="Past memories" value={data.homeSummary.pastMemoryCount} detail="Photos and thoughts" tone="accent-lilac" onClick={() => onGo("memories")} />
       </section>
       <section className="panel panel-coral">
         <PanelTitle title="Next up" action="Open calendar" onAction={() => onGo("calendar")} />

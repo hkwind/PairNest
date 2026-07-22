@@ -107,6 +107,7 @@ export type BootstrapPayload = {
   mergedEvents: MergedEvent[];
   memories: MemoryEntry[];
   recordedMemoryEventKeys: string[];
+  homeSummary: { activeWishlistCount: number; activeGoalCount: number; pastMemoryCount: number };
   syncResult: null;
   refreshResult: null;
   syncError: string;

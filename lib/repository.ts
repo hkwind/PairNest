@@ -2,7 +2,7 @@ import { EventSource, PartnerRole, Prisma } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { clampNumber, DEFAULT_COLORS, parseAnniversaryConfig, parseColors } from "@/lib/defaults";
-import { parseDateInput, parseDateOnly, toIso } from "@/lib/dates";
+import { parseDateInput, parseDateOnly, startOfDay, toIso } from "@/lib/dates";
 import { generateAnniversaryEvents } from "@/lib/anniversary";
 import { fetchGoogleEvents, removeGoogleEvent, upsertGoogleEvent } from "@/lib/google-calendar";
 import type {
@@ -21,24 +21,37 @@ import type {
 const APP_VERSION = "next-prisma-0.1.0";
 
 export async function ensureWorkspace(slug: string) {
-  const workspace = await prisma.workspace.upsert({
+  let workspace = await prisma.workspace.findUnique({
     where: { slug },
-    update: {},
-    create: {
-      slug,
-      name: "PairNest",
-      colorUserA: DEFAULT_COLORS.userA,
-      colorUserB: DEFAULT_COLORS.userB,
-      colorShared: DEFAULT_COLORS.shared,
-      partners: {
-        create: [
-          { role: "A", name: "Alex" },
-          { role: "B", name: "Jamie" }
-        ]
-      }
-    },
     include: { partners: true }
   });
+
+  if (!workspace) {
+    try {
+      workspace = await prisma.workspace.create({
+        data: {
+          slug,
+          name: "PairNest",
+          colorUserA: DEFAULT_COLORS.userA,
+          colorUserB: DEFAULT_COLORS.userB,
+          colorShared: DEFAULT_COLORS.shared,
+          partners: {
+            create: [
+              { role: "A", name: "Alex" },
+              { role: "B", name: "Jamie" }
+            ]
+          }
+        },
+        include: { partners: true }
+      });
+    } catch (error) {
+      const code = typeof error === "object" && error && "code" in error
+        ? String((error as { code?: unknown }).code)
+        : "";
+      if (code !== "P2002") throw error;
+      workspace = await prisma.workspace.findUniqueOrThrow({ where: { slug }, include: { partners: true } });
+    }
+  }
 
   if (workspace.partners.length < 2) {
     await prisma.partner.upsert({
@@ -51,20 +64,30 @@ export async function ensureWorkspace(slug: string) {
       update: {},
       create: { workspaceId: workspace.id, role: "B", name: "Jamie" }
     });
+    workspace = await prisma.workspace.findUniqueOrThrow({ where: { slug }, include: { partners: true } });
   }
 
-  return prisma.workspace.findUniqueOrThrow({
-    where: { slug },
-    include: { partners: true }
-  });
+  return workspace;
 }
 
-export async function bootstrapWorkspace(slug: string, options: { includeMemories?: boolean } = {}): Promise<BootstrapPayload> {
+export async function bootstrapWorkspace(slug: string, options: { includeMemories?: boolean; homeOnly?: boolean } = {}): Promise<BootstrapPayload> {
   const includeMemories = options.includeMemories ?? true;
+  const homeOnly = options.homeOnly ?? false;
   const workspace = await ensureWorkspace(slug);
-  const [wishlist, goals, customEvents, calendarConnections, calendarCache, memories, calendarSyncState] =
+  const now = new Date();
+  const today = startOfDay(now);
+  const futureEventWhere = {
+    workspaceId: workspace.id,
+    deletedAt: null,
+    OR: [{ end: { gte: now } }, { end: null, start: { gte: today } }]
+  };
+  const futureCalendarWhere = {
+    workspaceId: workspace.id,
+    OR: [{ end: { gte: now } }, { end: null, start: { gte: today } }]
+  };
+  const [wishlist, goals, customEvents, calendarConnections, calendarCache, memories, calendarSyncState, homeCounts] =
     await Promise.all([
-      prisma.wishlistItem.findMany({
+      homeOnly ? Promise.resolve([]) : prisma.wishlistItem.findMany({
         where: { workspaceId: workspace.id },
         orderBy: { createdAt: "desc" },
         select: {
@@ -72,7 +95,7 @@ export async function bootstrapWorkspace(slug: string, options: { includeMemorie
           addedBy: true, priority: true, status: true, createdAt: true, updatedAt: true
         }
       }),
-      prisma.goal.findMany({
+      homeOnly ? Promise.resolve([]) : prisma.goal.findMany({
         where: { workspaceId: workspace.id },
         orderBy: { createdAt: "desc" },
         select: {
@@ -81,7 +104,7 @@ export async function bootstrapWorkspace(slug: string, options: { includeMemorie
         }
       }),
       prisma.event.findMany({
-        where: { workspaceId: workspace.id, deletedAt: null },
+        where: homeOnly ? futureEventWhere : { workspaceId: workspace.id, deletedAt: null },
         orderBy: { start: "asc" },
         select: {
           id: true, title: true, start: true, end: true, source: true, note: true, mapUrl: true,
@@ -98,11 +121,12 @@ export async function bootstrapWorkspace(slug: string, options: { includeMemorie
         }
       }),
       prisma.calendarCache.findMany({
-        where: { workspaceId: workspace.id },
+        where: homeOnly ? futureCalendarWhere : { workspaceId: workspace.id },
         orderBy: { start: "asc" }
       }),
       includeMemories ? findMemoriesSafely(workspace.id) : Promise.resolve([]),
-      prisma.calendarSyncState.findUnique({ where: { workspaceId: workspace.id } }).catch(() => null)
+      prisma.calendarSyncState.findUnique({ where: { workspaceId: workspace.id } }).catch(() => null),
+      homeOnly ? findHomeCountsSafely(workspace.id) : Promise.resolve(null)
     ]);
 
   const settings = serializeSettings(workspace);
@@ -128,6 +152,9 @@ export async function bootstrapWorkspace(slug: string, options: { includeMemorie
   );
 
   const validMemories = memories.filter(hasMemoryContent);
+  const activeWishlistCount = homeCounts?.activeWishlistCount ?? wishlist.filter((item) => !isDoneStatus(item.status)).length;
+  const activeGoalCount = homeCounts?.activeGoalCount ?? goals.filter((item) => !isDoneStatus(item.status)).length;
+  const pastMemoryCount = homeCounts?.pastMemoryCount ?? validMemories.length;
   return {
     ok: true,
     appVersion: APP_VERSION,
@@ -139,6 +166,7 @@ export async function bootstrapWorkspace(slug: string, options: { includeMemorie
     mergedEvents,
     memories: includeMemories ? validMemories.slice(0, 5).map(serializeMemory) : [],
     recordedMemoryEventKeys: includeMemories ? validMemories.map((memory) => memory.eventKey) : [],
+    homeSummary: { activeWishlistCount, activeGoalCount, pastMemoryCount },
     syncResult: null,
     refreshResult: null,
     syncError: calendarSyncState?.lastError || "",
@@ -729,8 +757,34 @@ async function findMemoriesSafely(workspaceId: string) {
   }
 }
 
+async function findHomeCountsSafely(workspaceId: string) {
+  try {
+    const [activeWishlistCount, activeGoalCount, memoryRows] = await Promise.all([
+      prisma.wishlistItem.count({ where: { workspaceId, status: { not: "Done" } } }),
+      prisma.goal.count({ where: { workspaceId, status: { not: "Done" } } }),
+      prisma.$queryRaw<Array<{ count: number | bigint }>>`
+        SELECT COUNT(*)::int AS "count"
+        FROM "MemoryEntry"
+        WHERE "workspaceId" = ${workspaceId}
+          AND (BTRIM(COALESCE("thoughts", '')) <> '' OR CARDINALITY("photoDataUrls") > 0)
+      `
+    ]);
+    return {
+      activeWishlistCount,
+      activeGoalCount,
+      pastMemoryCount: Number(memoryRows[0]?.count || 0)
+    };
+  } catch {
+    return { activeWishlistCount: 0, activeGoalCount: 0, pastMemoryCount: 0 };
+  }
+}
+
 function hasMemoryContent(item: { thoughts: string | null; photoDataUrls: string[] }) {
   return Boolean(item.thoughts?.trim() || item.photoDataUrls.length);
+}
+
+function isDoneStatus(status: string) {
+  return status.trim().toLowerCase() === "done";
 }
 
 function serializeWishlist(item: Pick<Prisma.WishlistItemGetPayload<object>, "id" | "title" | "category" | "link" | "note" | "addedBy" | "priority" | "status" | "createdAt" | "updatedAt"> & { mapUrl?: string | null }): WishlistItem {

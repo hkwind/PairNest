@@ -7,7 +7,10 @@ export async function GET(request: NextRequest) {
   const mode = request.nextUrl.searchParams.get("mode");
 
   try {
-    const payload = await bootstrapWorkspace(coupleId, { includeMemories: mode !== "home" });
+    const payload = await bootstrapWorkspace(coupleId, {
+      includeMemories: mode !== "home",
+      homeOnly: mode === "home"
+    });
     after(() => refreshCalendar(coupleId).catch(() => undefined));
     return NextResponse.json(payload);
   } catch (error) {
