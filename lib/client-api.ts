@@ -23,8 +23,8 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  bootstrap(coupleId: string) {
-    return request<BootstrapPayload>(`/api/bootstrap?coupleId=${encodeURIComponent(coupleId)}`);
+  bootstrap(coupleId: string, mode: "home" | "full" = "full") {
+    return request<BootstrapPayload>(`/api/bootstrap?coupleId=${encodeURIComponent(coupleId)}&mode=${mode}`);
   },
   saveSettings(coupleId: string, payload: Record<string, unknown>) {
     return request<{ ok: boolean; settings: WorkspaceSettings }>("/api/settings", {

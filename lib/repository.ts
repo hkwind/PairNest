@@ -59,7 +59,8 @@ export async function ensureWorkspace(slug: string) {
   });
 }
 
-export async function bootstrapWorkspace(slug: string): Promise<BootstrapPayload> {
+export async function bootstrapWorkspace(slug: string, options: { includeMemories?: boolean } = {}): Promise<BootstrapPayload> {
+  const includeMemories = options.includeMemories ?? true;
   const workspace = await ensureWorkspace(slug);
   const [wishlist, goals, customEvents, calendarConnections, calendarCache, memories, calendarSyncState] =
     await Promise.all([
@@ -100,7 +101,7 @@ export async function bootstrapWorkspace(slug: string): Promise<BootstrapPayload
         where: { workspaceId: workspace.id },
         orderBy: { start: "asc" }
       }),
-      findMemoriesSafely(workspace.id),
+      includeMemories ? findMemoriesSafely(workspace.id) : Promise.resolve([]),
       prisma.calendarSyncState.findUnique({ where: { workspaceId: workspace.id } }).catch(() => null)
     ]);
 
@@ -136,8 +137,8 @@ export async function bootstrapWorkspace(slug: string): Promise<BootstrapPayload
     settings,
     googleStatus,
     mergedEvents,
-    memories: validMemories.slice(0, 5).map(serializeMemory),
-    recordedMemoryEventKeys: validMemories.map((memory) => memory.eventKey),
+    memories: includeMemories ? validMemories.slice(0, 5).map(serializeMemory) : [],
+    recordedMemoryEventKeys: includeMemories ? validMemories.map((memory) => memory.eventKey) : [],
     syncResult: null,
     refreshResult: null,
     syncError: calendarSyncState?.lastError || "",

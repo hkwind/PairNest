@@ -64,11 +64,26 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
     }
   }, [coupleId]);
 
+  const loadHomeFirst = useCallback(async () => {
+    setBusy("Loading workspace...");
+    try {
+      setLoadError("");
+      setData(await api.bootstrap(coupleId, "home"));
+      void loadAll(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Load failed";
+      setLoadError(message);
+      showToast(message);
+    } finally {
+      setBusy("");
+    }
+  }, [coupleId, loadAll]);
+
   useEffect(() => {
-    void loadAll();
+    void loadHomeFirst();
     const refreshAfterBackgroundSync = window.setTimeout(() => void loadAll(true), 3500);
     return () => window.clearTimeout(refreshAfterBackgroundSync);
-  }, [loadAll]);
+  }, [loadAll, loadHomeFirst]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -98,9 +113,9 @@ export function PairNestApp({ initialCoupleId }: { initialCoupleId: string }) {
 
   const settings = data?.settings;
   const colors = parseColors(settings?.colors);
-  const partnerAName = settings?.partnerAName || "Alex";
-  const partnerBName = settings?.partnerBName || "Jamie";
-  const appDisplayName = `Pairnest of ${partnerAName} and ${partnerBName}`;
+  const partnerAName = settings?.partnerAName || "";
+  const partnerBName = settings?.partnerBName || "";
+  const appDisplayName = settings ? `Pairnest of ${partnerAName} and ${partnerBName}` : "PairNest";
   const partnerNames = [partnerAName, partnerBName];
   const eligibleEvents = useMemo(() => uniqueEvents((data?.mergedEvents || []).filter((event) => isEligibleSharedEvent(event, partnerNames))), [data, partnerAName, partnerBName]);
   const upcoming = useMemo(() => eligibleEvents.filter((event) => isFutureUnfinishedEvent(event)), [eligibleEvents]);
@@ -730,7 +745,7 @@ function MemoriesScreen({
 
   return (
     <section className="screen">
-      <ScreenHeader title="往事回顧" description="Add photos and thoughts to past moments, then revisit them together." />
+      <ScreenHeader title="Memories" description="Add photos and thoughts to past moments, then revisit them together." />
       {savedEvents.length ? (
         <div className="memory-review-list">
           {savedEvents.map((event) => (
